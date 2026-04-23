@@ -189,20 +189,36 @@ async function generateSettlementData(eventId: number, excludeSettledInterim: bo
     memberIds.add(t.buyerMemberId);
   });
 
-  // Get existing settlements: preserve ALL already-settled ones
-  // (途中精算 / 全体精算 を問わず、レジ精算（署名済）が完了した会員はリセットしない)
+  // Get existing settlements and register transactions
+  // ロック条件: isSettled=true OR レジ取引記録(署名)が存在
+  //   レジで署名まで完了した会員は、何らかの理由で isSettled が false になっていても
+  //   必ず「精算完了」扱いとして保護する（データ修復も同時に実施）
   const existingSettlements = await db.listSettlements(eventId);
+  const regTxnsForEvent = await db.listRegisterTransactions(eventId);
+  const lockedBySettlementId = new Set<number>(
+    regTxnsForEvent.map(rt => rt.settlementId)
+  );
+
+  const isLocked = (s: typeof existingSettlements[number]) =>
+    s.isSettled || lockedBySettlementId.has(s.id);
+
   const settledMemberIds = new Set<number>();
   if (excludeSettledInterim) {
     existingSettlements
-      .filter(s => s.isSettled)
+      .filter(isLocked)
       .forEach(s => settledMemberIds.add(s.memberId));
   }
 
-  // Delete only non-settled settlements
+  // Delete non-locked settlements; heal locked-but-not-flagged settlements
   for (const s of existingSettlements) {
-    if (s.isSettled) {
-      // Keep all settled settlements (both interim and final, including signed ones)
+    if (isLocked(s)) {
+      // レジ記録があるのに isSettled=0 の不整合を自動修復
+      if (!s.isSettled && lockedBySettlementId.has(s.id)) {
+        await db.updateSettlement(s.id, {
+          isSettled: true,
+          settledAt: s.settledAt ?? new Date(),
+        });
+      }
       continue;
     }
     await db.deleteSettlement(s.id);
