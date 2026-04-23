@@ -326,14 +326,17 @@ export default function Reception() {
     const participationFee = event?.participationFee ?? 0;
     const companionFeePerPerson = event?.companionFee ?? 0;
 
-    let rows = "";
-    let grandTotalPersons = 0;
-    let grandTotalAmount = 0;
+    // 3カテゴリに分類
+    type Row = { memberNumber: number; name: string; personCount: number; memberFee: number; companionTotal: number; rowAmount: number; isExempt: boolean };
+    const collectedRows: Row[] = [];   // 受付徴収
+    const uncollectedRows: Row[] = []; // 精算書徴収（未徴収）
+    const exemptRows: Row[] = [];       // 免除（同伴者料金のみ徴収ありうる）
 
-    presentMembers.forEach((a, idx) => {
+    presentMembers.forEach((a) => {
       const m = a.member;
       if (!m) return;
       const exempt = (a as any).isFeeExempt ?? false;
+      const collected = (a as any).feeCollected ?? false;
       const companions = (a as any).companionCount ?? 0;
 
       const personCount = 1 + companions;
@@ -341,29 +344,61 @@ export default function Reception() {
       const companionTotal = companions * companionFeePerPerson;
       const rowAmount = memberFee + companionTotal;
 
-      grandTotalPersons += personCount;
-      grandTotalAmount += rowAmount;
+      const row: Row = {
+        memberNumber: m.memberNumber,
+        name: m.tradeName ?? m.displayName,
+        personCount, memberFee, companionTotal, rowAmount, isExempt: exempt,
+      };
 
-      const bgColor = idx % 2 === 0 ? "#fff" : "#f9f9f9";
-      rows += `<tr style="background:${bgColor};">
-        <td class="c num">${m.memberNumber}</td>
-        <td class="l">${m.tradeName ?? m.displayName}</td>
-        <td class="c">${personCount}</td>
-        <td class="r">¥${rowAmount.toLocaleString()}</td>
-      </tr>`;
+      if (exempt && rowAmount === 0) {
+        exemptRows.push(row);
+      } else if (collected) {
+        collectedRows.push(row);
+      } else {
+        uncollectedRows.push(row);
+      }
     });
 
-    rows += `<tr class="total-row">
-      <td class="c" colspan="2" style="font-weight:bold;">合計</td>
-      <td class="c" style="font-weight:bold;">${grandTotalPersons}</td>
-      <td class="r" style="font-weight:bold;">¥${grandTotalAmount.toLocaleString()}</td>
-    </tr>`;
+    const renderTable = (title: string, colorHex: string, rows: Row[], emptyMsg: string) => {
+      if (rows.length === 0) {
+        return `<div class="section-title" style="border-left-color:${colorHex};">${title} <span class="count">0名</span></div>
+          <div class="empty">${emptyMsg}</div>`;
+      }
+      let body = "";
+      let subPersons = 0, subAmount = 0;
+      rows.forEach((r, idx) => {
+        subPersons += r.personCount;
+        subAmount += r.rowAmount;
+        const bg = idx % 2 === 0 ? "#fff" : "#f9f9f9";
+        body += `<tr style="background:${bg};">
+          <td class="c num">${r.memberNumber}</td>
+          <td class="l">${r.name}${r.isExempt ? ' <span style="color:#b45309;font-size:8px;">(免除)</span>' : ''}</td>
+          <td class="c">${r.personCount}</td>
+          <td class="r">¥${r.rowAmount.toLocaleString()}</td>
+        </tr>`;
+      });
+      body += `<tr class="sub-total"><td class="c" colspan="2" style="font-weight:bold;">小計（${rows.length}名）</td>
+        <td class="c" style="font-weight:bold;">${subPersons}</td>
+        <td class="r" style="font-weight:bold;">¥${subAmount.toLocaleString()}</td></tr>`;
+      return `<div class="section-title" style="border-left-color:${colorHex};">${title} <span class="count">${rows.length}名</span></div>
+        <table>
+          <thead><tr><th style="width:50px;">番号</th><th>屋号</th><th style="width:60px;">人数</th><th style="width:80px;">金額</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>`;
+    };
+
+    const section1 = renderTable("受付徴収（当日現金徴収）", "#10b981", collectedRows, "該当者なし");
+    const section2 = renderTable("精算書徴収（精算書より差引）", "#ef4444", uncollectedRows, "該当者なし");
+    const section3 = exemptRows.length > 0
+      ? renderTable("参加費免除", "#f59e0b", exemptRows, "該当者なし")
+      : "";
 
     const html = `<!DOCTYPE html><html><head><title>出席者一覧</title>
       <style>
         @media print {
           body { margin: 0; }
           @page { size: A4 portrait; margin: 10mm 10mm 10mm 10mm; }
+          .section { page-break-inside: avoid; }
         }
         body {
           font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
@@ -373,28 +408,62 @@ export default function Reception() {
           margin: 0 auto;
         }
         h2 { text-align: center; font-size: 16px; margin: 8px 0 4px; }
-        .summary { text-align: center; font-size: 11px; color: #555; margin-bottom: 6px; }
+        .summary { text-align: center; font-size: 11px; color: #555; margin-bottom: 4px; }
         .summary-detail { text-align: center; font-size: 10px; color: #666; margin-bottom: 8px; }
-        table { width: 100%; border-collapse: collapse; font-size: 10px; }
+        .section-title {
+          margin: 10px 0 4px;
+          padding: 4px 8px;
+          background: #f7f7f7;
+          border-left: 4px solid #ccc;
+          font-weight: bold;
+          font-size: 12px;
+        }
+        .section-title .count {
+          font-weight: normal;
+          color: #666;
+          font-size: 10px;
+          margin-left: 4px;
+        }
+        .empty {
+          font-size: 10px;
+          color: #999;
+          padding: 6px 8px;
+          border: 1px dashed #ddd;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 4px; }
         th { background: #f0f0f0; border: 1px solid #ccc; padding: 3px 4px; font-size: 9px; }
         td { border: 1px solid #ddd; padding: 2px 4px; }
         .c { text-align: center; }
         .l { text-align: left; }
         .r { text-align: right; }
         .num { font-family: monospace; }
-        .total-row td { border-top: 2px solid #333; background: #f5f5f5; }
+        .sub-total td { border-top: 2px solid #555; background: #f5f5f5; }
+        .grand-total {
+          margin-top: 10px;
+          padding: 6px 10px;
+          border: 2px solid #333;
+          background: #fafafa;
+          font-size: 12px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .grand-total .label { font-weight: bold; }
+        .grand-total .amount { font-weight: bold; font-size: 14px; }
         .footer { text-align: right; font-size: 8px; color: #999; margin-top: 6px; }
       </style></head><body>
       <h2>${event?.eventDate ?? ""} ${event?.title ?? ""} 出席者一覧</h2>
       <div class="summary">出席者: ${presentCount}名 / 同伴者: ${totalCompanionCount}名 / 合計: ${receptionSummary.totalPersons}名</div>
       <div class="summary-detail">
-        参加費: ¥${participationFee.toLocaleString()}/人　同伴者料金: ¥${companionFeePerPerson.toLocaleString()}/人　
-        徴収合計: ¥${receptionSummary.totalAmount.toLocaleString()}　<span style="color:#888;font-size:10px;">※ 事前徴収済（精算書には含まれません）</span>
+        参加費: ¥${participationFee.toLocaleString()}/人　同伴者料金: ¥${companionFeePerPerson.toLocaleString()}/人
       </div>
-      <table>
-        <thead><tr><th style="width:50px;">番号</th><th>屋号</th><th style="width:60px;">人数</th><th style="width:80px;">金額</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="section">${section1}</div>
+      <div class="section">${section2}</div>
+      ${section3 ? `<div class="section">${section3}</div>` : ""}
+      <div class="grand-total">
+        <span class="label">総計 ${presentCount}名（同伴者含め ${receptionSummary.totalPersons}名）</span>
+        <span class="amount">¥${receptionSummary.totalAmount.toLocaleString()}</span>
+      </div>
       <div class="footer">印刷日: ${new Date().toLocaleDateString("ja-JP")} ${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}</div>
     </body></html>`;
 
@@ -543,29 +612,42 @@ export default function Reception() {
         </Card>
       )}
 
-      {/* 徴収内訳 - タブレット縦画面ではコンパクトに */}
+      {/* 徴収内訳 - 受付徴収 / 精算書徴収 / 免除 を明確に分けて表示 */}
       {presentCount > 0 && (
         <Card className="border-slate-200 portrait:shadow-sm">
           <CardContent className="pt-3 pb-3 portrait:pt-2 portrait:pb-2">
-            <div className="flex flex-wrap gap-4 portrait:gap-2 text-sm portrait:text-xs">
-              <div>
-                <span className="text-muted-foreground">参加費:</span>{" "}
-                <span className="font-semibold">{presentCount - feeExemptCount}名 × ¥{(receptionSummary.participationFee).toLocaleString()} = ¥{((presentCount - feeExemptCount) * receptionSummary.participationFee).toLocaleString()}</span>
+            <div className="flex flex-wrap gap-x-4 gap-y-2 portrait:gap-1.5 text-sm portrait:text-xs items-center">
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                <span className="text-muted-foreground">受付徴収:</span>
+                <span className="font-semibold text-emerald-700">
+                  {receptionSummary.collectedCount}名 / ¥{receptionSummary.collectedAmount.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                <span className="text-muted-foreground">精算書徴収:</span>
+                <span className="font-semibold text-red-700">
+                  {receptionSummary.uncollectedCount}名 / ¥{receptionSummary.uncollectedAmount.toLocaleString()}
+                </span>
+                <span className="text-[10px] text-muted-foreground">(精算書より差引)</span>
               </div>
               {feeExemptCount > 0 && (
-                <div>
-                  <span className="text-amber-600">免除:</span>{" "}
-                  <span className="font-semibold text-amber-600">{feeExemptCount}名</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                  <span className="text-muted-foreground">免除:</span>
+                  <span className="font-semibold text-amber-700">{feeExemptCount}名</span>
                 </div>
               )}
               {totalCompanionCount > 0 && (
-                <div>
-                  <span className="text-muted-foreground">同伴者:</span>{" "}
-                  <span className="font-semibold">{totalCompanionCount}名 × ¥{(receptionSummary.companionFee).toLocaleString()} = ¥{(totalCompanionCount * receptionSummary.companionFee).toLocaleString()}</span>
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <span>同伴者:</span>
+                  <span className="font-semibold text-foreground">{totalCompanionCount}名 × ¥{(receptionSummary.companionFee).toLocaleString()}</span>
                 </div>
               )}
-              <div className="ml-auto">
-                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">※ 参加費・同伴者料金は事前徴収済（精算書には含まれません）</span>
+              <div className="ml-auto flex items-center gap-1.5">
+                <span className="text-muted-foreground">総計:</span>
+                <span className="font-bold">¥{receptionSummary.totalAmount.toLocaleString()}</span>
               </div>
             </div>
           </CardContent>
