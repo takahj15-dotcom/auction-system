@@ -1,31 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
-import { FileText, LogOut, Download, Eye, User, Menu, X, ChevronRight, Calendar, TrendingUp, TrendingDown, Wallet, Bell, CheckCheck, Lock, ShoppingCart, RefreshCw, ArrowUpRight, ArrowDownLeft, Clock } from "lucide-react";
-
-function usePortalAuth() {
-  const [, setLocation] = useLocation();
-  const token = localStorage.getItem("portal_token");
-  const memberStr = localStorage.getItem("portal_member");
-  const member = memberStr ? JSON.parse(memberStr) : null;
-
-  const logout = useCallback(() => {
-    localStorage.removeItem("portal_token");
-    localStorage.removeItem("portal_member");
-    setLocation("/portal/login");
-  }, [setLocation]);
-
-  useEffect(() => {
-    if (!token) {
-      setLocation("/portal/login");
-    }
-  }, [token, setLocation]);
-
-  return { token, member, logout };
-}
+import { FileText, LogOut, Download, Eye, User, Menu, X, ChevronRight, Calendar, TrendingUp, TrendingDown, Wallet, Bell, CheckCheck, Lock, ShoppingCart, RefreshCw, ArrowUpRight, ArrowDownLeft, Clock, ShieldAlert } from "lucide-react";
+import { usePortalAuth } from "@/hooks/usePortalAuth";
 
 export default function PortalDashboard() {
-  const { token, member, logout } = usePortalAuth();
+  const { token, member, logout, impersonated } = usePortalAuth();
   const [, setLocation] = useLocation();
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -147,6 +127,25 @@ export default function PortalDashboard() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f5f7fa", fontFamily: "'Noto Sans JP', sans-serif" }}>
+      {impersonated && (
+        <div style={{
+          background: "#fef3c7",
+          borderBottom: "2px solid #f59e0b",
+          color: "#92400e",
+          padding: "8px 16px",
+          fontSize: 13,
+          fontWeight: 600,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+        }}>
+          <ShieldAlert size={16} />
+          <span>管理者権限で代理閲覧中（{member?.memberNumber} {member?.displayName}）— 操作は監査ログに記録されます</span>
+        </div>
+      )}
       {/* Mobile-optimized Header */}
       <header style={{
         background: "#fff",

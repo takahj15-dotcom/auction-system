@@ -1,28 +1,8 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useLocation, useParams } from "wouter";
 import { ArrowLeft, Printer, FileDown, FileText, LogOut, User, Menu, X, Lock } from "lucide-react";
-
-function usePortalAuth() {
-  const [, setLocation] = useLocation();
-  const token = localStorage.getItem("portal_token");
-  const memberStr = localStorage.getItem("portal_member");
-  const member = memberStr ? JSON.parse(memberStr) : null;
-
-  const logout = useCallback(() => {
-    localStorage.removeItem("portal_token");
-    localStorage.removeItem("portal_member");
-    setLocation("/portal/login");
-  }, [setLocation]);
-
-  useEffect(() => {
-    if (!token) {
-      setLocation("/portal/login");
-    }
-  }, [token, setLocation]);
-
-  return { token, member, logout };
-}
+import { usePortalAuth } from "@/hooks/usePortalAuth";
 
 // Detect if running on iOS
 function isIOS(): boolean {

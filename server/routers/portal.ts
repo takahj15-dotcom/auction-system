@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { router, publicProcedure } from "../_core/trpc";
+import { router, publicProcedure, adminProcedure } from "../_core/trpc";
 import * as db from "../db";
+import { createAuditLog } from "../db";
 import { eq } from "drizzle-orm";
 import { members } from "../../drizzle/schema";
 import bcrypt from "bcryptjs";
@@ -44,6 +45,47 @@ export const portalRouter = router({
           memberNumber: member.memberNumber,
           displayName: member.displayName,
           requirePasswordChange: member.requirePasswordChange,
+        },
+      };
+    }),
+
+  // 管理者による会員ポータルへのなりすましログイン（サポート用途）
+  // 会員パスワードを要求せずに、管理者権限でポータルトークンを発行する
+  adminImpersonate: adminProcedure
+    .input(z.object({ memberId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const member = await db.getMemberById(input.memberId);
+      if (!member) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "会員が見つかりません。" });
+      }
+
+      // 会員と同じ形式のポータルトークンを発行（有効期限は短めの1時間）
+      const token = jwt.sign(
+        {
+          memberId: member.id,
+          memberNumber: member.memberNumber,
+          type: "member",
+          impersonatedBy: ctx.user.id,
+        },
+        ENV.cookieSecret,
+        { expiresIn: "1h" }
+      );
+
+      await createAuditLog({
+        userId: ctx.user.id,
+        action: "admin_impersonate_portal",
+        tableName: "members",
+        recordId: member.id,
+        newValue: { memberNumber: member.memberNumber, displayName: member.displayName },
+      });
+
+      return {
+        token,
+        member: {
+          id: member.id,
+          memberNumber: member.memberNumber,
+          displayName: member.displayName,
+          requirePasswordChange: false,
         },
       };
     }),

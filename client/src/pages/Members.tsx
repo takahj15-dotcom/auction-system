@@ -37,7 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search, Key, Printer, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Hash } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Key, Printer, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Hash, LogIn } from "lucide-react";
 import { toast } from "sonner";
 
 type MemberForm = {
@@ -138,6 +138,24 @@ export default function Members() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const impersonateMutation = trpc.portal.adminImpersonate.useMutation({
+    onSuccess: (data) => {
+      // 管理者の元セッションは残したまま、別タブでポータルを開く
+      const portalUrl = `${window.location.origin}/portal?impersonate_token=${encodeURIComponent(
+        data.token,
+      )}&impersonate_member=${encodeURIComponent(JSON.stringify(data.member))}`;
+      window.open(portalUrl, "_blank", "noopener");
+      toast.success(`${data.member.memberNumber} ${data.member.displayName} のポータルを新しいタブで開きました`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const openMemberPortal = (m: typeof members[0]) => {
+    if (!confirm(`${m.memberNumber} ${m.displayName} の会員ポータルを管理者権限で開きます。よろしいですか？\n（操作は監査ログに記録されます）`)) {
+      return;
+    }
+    impersonateMutation.mutate({ memberId: m.id });
+  };
 
   const openPasswordDialog = (m: typeof members[0]) => {
     setPasswordMemberId(m.id);
@@ -528,6 +546,9 @@ export default function Members() {
                         <div className="flex gap-1 justify-end">
                           <Button variant="ghost" size="icon" onClick={() => openEdit(m)} title="編集">
                             <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => openMemberPortal(m)} title="会員ポータルを開く（管理者権限）" disabled={impersonateMutation.isPending}>
+                            <LogIn className="h-4 w-4 text-blue-600" />
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => openPasswordDialog(m)} title="パスワード設定">
                             <Key className="h-4 w-4 text-amber-600" />
