@@ -66,7 +66,7 @@ export default function Closing() {
       utils.events.list.invalidate();
       setOpenDialog(null);
       const msg = data.skippedInterim > 0
-        ? `精算処理が完了しました（${data.memberCount}会員、${data.transactionCount}件、途中精算済み${data.skippedInterim}名を除外）`
+        ? `精算処理が完了しました（${data.memberCount}会員、${data.transactionCount}件、清算済み${data.skippedInterim}名は保護のため除外）`
         : `精算処理が完了しました（${data.memberCount}会員、${data.transactionCount}件）`;
       toast.success(msg);
     },
@@ -663,14 +663,14 @@ export default function Closing() {
                 <AlertDialogDescription>
                   {selectedEvent.eventDate}の全取引({txSummary.count}件)を集計し、精算書を生成します。
                   <br /><br />
-                  {interimSettledCount > 0 && (
+                  {settledSettlements > 0 && (
                     <>
-                      <strong className="text-blue-600">途中精算済みの{interimSettledCount}名は除外されます。</strong>
+                      <strong className="text-blue-600">清算済み（サイン取得済み含む）の{settledSettlements}名は再計算から除外され、既存の精算書がそのまま保持されます。</strong>
                       <br /><br />
                     </>
                   )}
                   <strong>精算処理後も取引の追加・編集・削除は可能です。</strong>
-                  取引を修正した場合は「精算を再計算」で精算書を更新できます。
+                  取引を修正した場合は「精算を再計算」で未清算の会員のみ精算書を更新できます。
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
