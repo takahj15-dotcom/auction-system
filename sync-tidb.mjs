@@ -87,5 +87,64 @@ for (const [table, def] of Object.entries(TABLES)) {
 }
 
 await conn.end();
+
+// ───────────────────────────────────────────────────────
+// Post-sync cleanup: register_transactions の重複/orphan を解消
+// （同じ会員×同イベントに複数 rt がある場合、現 settlement を
+//  指す rt のみ残して他を削除する）
+// ───────────────────────────────────────────────────────
+console.log('\n=== Post-sync cleanup: register_transactions dedup ===');
+const eventIds = sqlite.prepare('SELECT DISTINCT eventId FROM register_transactions').all().map(r => r.eventId);
+let totalRemoved = 0, totalFixed = 0;
+
+for (const eid of eventIds) {
+  const settlements = sqlite.prepare('SELECT id, memberId FROM settlements WHERE eventId=?').all(eid);
+  const correctMap = new Map(settlements.map(s => [s.memberId, s.id]));
+
+  const rts = sqlite.prepare(
+    'SELECT id, memberId, settlementId, processedAt FROM register_transactions WHERE eventId=? ORDER BY memberId, processedAt DESC'
+  ).all(eid);
+
+  const byMember = new Map();
+  for (const rt of rts) {
+    if (!byMember.has(rt.memberId)) byMember.set(rt.memberId, []);
+    byMember.get(rt.memberId).push(rt);
+  }
+
+  const toDelete = [];
+  for (const [memberId, memberRts] of byMember) {
+    if (memberRts.length === 1 && correctMap.has(memberId) && memberRts[0].settlementId === correctMap.get(memberId)) continue;
+
+    const correctSid = correctMap.get(memberId);
+    if (!correctSid) continue; // settlement が無ければ触らない
+
+    const matching = memberRts.filter(r => r.settlementId === correctSid);
+    if (matching.length >= 1) {
+      matching.sort((a, b) => b.processedAt - a.processedAt);
+      const keep = matching[0];
+      for (const r of memberRts) if (r.id !== keep.id) toDelete.push(r.id);
+    } else {
+      // どの rt も現 settlement を指さない → 最新を残して settlementId を修復
+      const latest = memberRts[0];
+      sqlite.prepare('UPDATE register_transactions SET settlementId=? WHERE id=?').run(correctSid, latest.id);
+      totalFixed++;
+      for (const r of memberRts) if (r.id !== latest.id) toDelete.push(r.id);
+    }
+  }
+
+  if (toDelete.length > 0) {
+    const del = sqlite.prepare('DELETE FROM register_transactions WHERE id=?');
+    const tx = sqlite.transaction((ids) => { for (const id of ids) del.run(id); });
+    tx(toDelete);
+    totalRemoved += toDelete.length;
+  }
+}
+
+if (totalRemoved > 0 || totalFixed > 0) {
+  console.log(`重複削除: ${totalRemoved} 件 / settlementId 修復: ${totalFixed} 件`);
+} else {
+  console.log('重複・orphan なし（クリーンな状態）');
+}
+
 sqlite.close();
 console.log(`\n✅ 完了。合計 ${grandTotal} 行を同期しました。`);
