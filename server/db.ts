@@ -279,13 +279,24 @@ export async function updateFeeCollected(eventId: number, memberId: number, feeC
   }
 }
 
-// 取引発生時に「未登録の会員」を受付（出席）扱いで自動登録し、参加費を未徴収にする。
-// 既に受付レコードがある場合は上書きしない（手入力の出欠や徴収状態を尊重）。
+// 取引発生時に会員を受付（出席）扱いにする。
+// - 受付レコードが無い場合: 新規作成（出席・未徴収）
+// - isPresent=false の場合: 出席に昇格（参加費免除/徴収状態は既存値を保持）
+// - 既に isPresent=true の場合: 何もしない（手入力の状態を尊重）
 export async function ensureAttendanceFromTransaction(eventId: number, memberId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const existing = await getAttendance(eventId, memberId);
-  if (existing) return { created: false as const };
+  if (existing) {
+    if (existing.isPresent) return { created: false as const, updated: false as const };
+    await db.update(eventAttendance)
+      .set({
+        isPresent: true,
+        checkedInAt: new Date(),
+      })
+      .where(eq(eventAttendance.id, existing.id));
+    return { created: false as const, updated: true as const };
+  }
   await db.insert(eventAttendance).values({
     eventId,
     memberId,
@@ -295,7 +306,7 @@ export async function ensureAttendanceFromTransaction(eventId: number, memberId:
     feeCollected: false,
     checkedInAt: new Date(),
   });
-  return { created: true as const };
+  return { created: true as const, updated: false as const };
 }
 
 export async function bulkInitAttendance(eventId: number) {
