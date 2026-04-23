@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "auction-system-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "cloudflare-tunnel",
+      "runtimeExecutable": "cloudflared",
+      "runtimeArgs": ["tunnel", "--url", "http://localhost:3000"],
+      "port": 0
+    }
+  ]
+}
