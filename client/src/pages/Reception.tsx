@@ -389,9 +389,7 @@ export default function Reception() {
 
     const section1 = renderTable("受付徴収（当日現金徴収）", "#10b981", collectedRows, "該当者なし");
     const section2 = renderTable("精算書徴収（精算書より差引）", "#ef4444", uncollectedRows, "該当者なし");
-    const section3 = exemptRows.length > 0
-      ? renderTable("参加費免除", "#f59e0b", exemptRows, "該当者なし")
-      : "";
+    // 免除者は印刷対象外
 
     const html = `<!DOCTYPE html><html><head><title>出席者一覧</title>
       <style>
@@ -459,9 +457,8 @@ export default function Reception() {
       </div>
       <div class="section">${section1}</div>
       <div class="section">${section2}</div>
-      ${section3 ? `<div class="section">${section3}</div>` : ""}
       <div class="grand-total">
-        <span class="label">総計 ${presentCount}名（同伴者含め ${receptionSummary.totalPersons}名）</span>
+        <span class="label">総計 ${collectedRows.length + uncollectedRows.length}名（同伴者含め ${receptionSummary.totalPersons - exemptRows.reduce((s, r) => s + r.personCount, 0)}名）</span>
         <span class="amount">¥${receptionSummary.totalAmount.toLocaleString()}</span>
       </div>
       <div class="footer">印刷日: ${new Date().toLocaleDateString("ja-JP")} ${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}</div>
