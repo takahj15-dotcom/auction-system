@@ -33,6 +33,7 @@ import {
   CreditCard,
   ClipboardCheck,
   Settings,
+  BookOpen,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -48,6 +49,7 @@ const menuItems = [
   { icon: CreditCard, label: "レジ", path: "/register" },
   { icon: Users, label: "会員管理", path: "/members" },
   { icon: Shield, label: "監査ログ", path: "/audit" },
+  { icon: BookOpen, label: "使い方マニュアル", path: "/manual" },
   { icon: Settings, label: "各種設定", path: "/settings" },
 ];
 

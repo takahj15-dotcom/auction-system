@@ -21,6 +21,7 @@ import PortalSettlementDetail from "./pages/PortalSettlementDetail";
 import PortalChangePassword from "./pages/PortalChangePassword";
 import Reception from "./pages/Reception";
 import Settings from "./pages/Settings";
+import Manual from "./pages/Manual";
 import RegisterClosing from "./pages/RegisterClosing";
 
 
@@ -49,6 +50,7 @@ function Router() {
             <Route path="/register" component={Register} />
             <Route path="/members" component={Members} />
             <Route path="/audit" component={AuditLog} />
+            <Route path="/manual" component={Manual} />
             <Route path="/settings" component={Settings} />
             <Route path="/404" component={NotFound} />
             <Route component={NotFound} />
