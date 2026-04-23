@@ -395,16 +395,23 @@ export default function Reception() {
       <style>
         @media print {
           body { margin: 0; }
-          @page { size: A4 portrait; margin: 10mm 10mm 10mm 10mm; }
+          @page { size: A4 portrait; margin: 6mm 6mm 6mm 6mm; }
           .section { page-break-inside: avoid; }
         }
         body {
           font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
           font-size: 11px;
           color: #222;
-          max-width: 190mm;
+          max-width: 198mm;
           margin: 0 auto;
         }
+        .two-col {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 6px;
+          align-items: start;
+        }
+        .two-col .section { min-width: 0; }
         h2 { text-align: center; font-size: 16px; margin: 8px 0 4px; }
         .summary { text-align: center; font-size: 11px; color: #555; margin-bottom: 4px; }
         .summary-detail { text-align: center; font-size: 10px; color: #666; margin-bottom: 8px; }
@@ -455,8 +462,10 @@ export default function Reception() {
       <div class="summary-detail">
         参加費: ¥${participationFee.toLocaleString()}/人　同伴者料金: ¥${companionFeePerPerson.toLocaleString()}/人
       </div>
-      <div class="section">${section1}</div>
-      <div class="section">${section2}</div>
+      <div class="two-col">
+        <div class="section">${section1}</div>
+        <div class="section">${section2}</div>
+      </div>
       <div class="grand-total">
         <span class="label">総計 ${collectedRows.length + uncollectedRows.length}名（同伴者含め ${receptionSummary.totalPersons - exemptRows.reduce((s, r) => s + r.personCount, 0)}名）</span>
         <span class="amount">¥${receptionSummary.totalAmount.toLocaleString()}</span>
