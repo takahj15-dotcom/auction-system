@@ -383,9 +383,8 @@ export default function RegisterClosing() {
                         <th className="text-left py-1 pr-2">会員番号</th>
                         <th className="text-right py-1 pr-2">入金</th>
                         <th className="text-right py-1 pr-2">支払い</th>
-                        <th className="text-center py-1">サイン</th>
-                        <th className="w-4"></th>
-                        <th className="text-left py-1 pr-2">会員番号</th>
+                        <th className="text-center py-1 pr-2">サイン</th>
+                        <th className="text-left py-1 pr-2 pl-2 border-l border-black">会員番号</th>
                         <th className="text-right py-1 pr-2">入金</th>
                         <th className="text-right py-1 pr-2">支払い</th>
                         <th className="text-center py-1">サイン</th>
@@ -406,15 +405,14 @@ export default function RegisterClosing() {
                             <td className="text-right py-1 pr-2 font-mono whitespace-nowrap">
                               {left?.paymentAmount > 0 ? fmt(left.paymentAmount) : ""}
                             </td>
-                            <td className="text-center py-1">
+                            <td className="text-center py-1 pr-2">
                               {left?.signatureUrl ? (
                                 <img src={left.signatureUrl} alt="サイン" className="h-6 inline-block" />
                               ) : (
                                 ""
                               )}
                             </td>
-                            <td className="w-4"></td>
-                            <td className="py-1 pr-2 font-mono whitespace-nowrap">
+                            <td className="py-1 pr-2 pl-2 font-mono whitespace-nowrap border-l border-black">
                               {right ? String(right.memberNumber) : ""}
                             </td>
                             <td className="text-right py-1 pr-2 font-mono whitespace-nowrap">
