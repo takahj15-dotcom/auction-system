@@ -8,7 +8,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
-import { requireAdmin, requireSessionOrPortalToken, type AuthenticatedRequest } from "./httpAuth";
+import { requireAdmin, requireCookieSession, requireSessionOrPortalToken, type AuthenticatedRequest } from "./httpAuth";
 import { serveStatic, setupVite } from "./vite";
 import { getSettlementPdfDataInternal, getBulkSettlementPdfData } from "../routers/pdf";
 import { generateSettlementPdf, generateBulkSettlementPdf, generateRegisterClosingPdf } from "../pdfGenerator";
@@ -45,10 +45,18 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  // Serve local uploads (signatures, seal images, etc.)
+  // Serve local uploads. signatures は会員の個人情報なので cookie セッション必須、
+  // seal-images は会社の印影で会員ポータル側でも <img> 表示するため公開のままにする。
   const uploadDir = getLocalUploadDir();
   fs.mkdirSync(uploadDir, { recursive: true });
-  app.use("/uploads", express.static(uploadDir));
+  fs.mkdirSync(path.join(uploadDir, "signatures"), { recursive: true });
+  fs.mkdirSync(path.join(uploadDir, "seal-images"), { recursive: true });
+  app.use(
+    "/uploads/signatures",
+    requireCookieSession,
+    express.static(path.join(uploadDir, "signatures"))
+  );
+  app.use("/uploads/seal-images", express.static(path.join(uploadDir, "seal-images")));
 
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
