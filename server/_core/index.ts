@@ -10,6 +10,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { requireAdmin, requireCookieSession, requireSessionOrPortalToken, type AuthenticatedRequest } from "./httpAuth";
+import { apiRateLimit, authRateLimit } from "./rateLimit";
 import { serveStatic, setupVite } from "./vite";
 import { getSettlementPdfDataInternal, getBulkSettlementPdfData } from "../routers/pdf";
 import { generateSettlementPdf, generateBulkSettlementPdf, generateRegisterClosingPdf } from "../pdfGenerator";
@@ -43,6 +44,9 @@ async function startServer() {
 
   const app = express();
   const server = createServer(app);
+  // リバースプロキシ経由を想定し、X-Forwarded-For の最初の hop を信頼する。
+  // express-rate-limit が正しいクライアント IP を取得できるようにするため。
+  app.set("trust proxy", 1);
   // セキュリティヘッダ。CSP は SPA + 外部 OAuth + 地図サービス等の都合で
   // 別途設計するため、ここでは無効化して他のヘッダ (HSTS, X-Frame-Options,
   // X-Content-Type-Options, Referrer-Policy など) を有効化する。
@@ -246,8 +250,19 @@ async function startServer() {
   });
 
   // tRPC API
+  // - portal.login は 4 桁パスワードのブルートフォース対策で厳格な制限 (15分5回)。
+  //   tRPC のバッチ URL は "/api/trpc/portal.login" や "/api/trpc/portal.login,system.health"
+  //   等の形になるため、URL に "portal.login" を含むかで判定する。
+  // - その他の経路は緩い制限 (1分300回) を全体に適用。
+  app.use("/api/trpc", (req, res, next) => {
+    if (req.url.includes("portal.login")) {
+      return authRateLimit(req, res, next);
+    }
+    next();
+  });
   app.use(
     "/api/trpc",
+    apiRateLimit,
     createExpressMiddleware({
       router: appRouter,
       createContext,
