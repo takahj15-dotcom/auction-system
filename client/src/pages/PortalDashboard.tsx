@@ -146,6 +146,31 @@ export default function PortalDashboard() {
           <span>管理者権限で代理閲覧中（{member?.memberNumber} {member?.displayName}）— 操作は監査ログに記録されます</span>
         </div>
       )}
+      {profile?.isExpired && (
+        <div style={{
+          background: "#fee2e2",
+          borderBottom: "2px solid #dc2626",
+          color: "#991b1b",
+          padding: "10px 16px",
+          fontSize: 13,
+          fontWeight: 600,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+        }}>
+          <ShieldAlert size={16} />
+          <span>
+            ⚠ 会員権失効のお知らせ：1年以上ご利用がないため、会員権が失効状態です
+            {profile.lastActivityAt
+              ? `（最終取引: ${new Date(profile.lastActivityAt * 1000).toLocaleDateString("ja-JP")}）`
+              : "（取引履歴なし）"}
+            。継続利用をご希望の場合は事務局までお問い合わせください。
+          </span>
+        </div>
+      )}
       {/* Mobile-optimized Header */}
       <header style={{
         background: "#fff",
@@ -880,6 +905,16 @@ export default function PortalDashboard() {
                     <span style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>{item.event.eventDate}</span>
                     {item.event.title && (
                       <span style={{ fontSize: 11, color: "#888" }}>{item.event.title}</span>
+                    )}
+                    {item.settlement?.suffix && (
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: "#1d4ed8",
+                        background: "#dbeafe",
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                      }}>伝票{item.settlement.suffix}</span>
                     )}
                   </div>
                   <ChevronRight size={16} color="#ccc" />
