@@ -45,8 +45,10 @@ export async function bootstrapDatabase() {
       try {
         await db.run(sql.raw(safeIdx));
       } catch (err: any) {
-        // already-exists 系は無視
-        if (/already exists/i.test(String(err?.message ?? ""))) continue;
+        // already-exists / 重複カラム系は無視
+        const msg = String(err?.message ?? "");
+        if (/already exists/i.test(msg)) continue;
+        if (/duplicate column name/i.test(msg)) continue;
         console.error(`[Bootstrap] Migration ${file} statement failed:`, err?.message);
       }
     }

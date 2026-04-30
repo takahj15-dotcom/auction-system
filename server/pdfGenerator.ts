@@ -129,7 +129,8 @@ async function renderSettlementPage(
   const rightColWidth = contentWidth * 0.52;
 
   doc.setFontSize(12);
-  doc.text(`${member?.memberNumber ?? ""}　${member?.displayName ?? ""}　様`, marginLeft, y);
+  const memberNumLabel = `${member?.memberNumber ?? ""}${settlement?.suffix ? `-${settlement.suffix}` : ""}`;
+  doc.text(`${memberNumLabel}　${member?.displayName ?? ""}　様`, marginLeft, y);
   const memberNameY = y;
   y += 8;
 

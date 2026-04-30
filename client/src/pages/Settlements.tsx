@@ -162,7 +162,10 @@ export default function Settlements() {
                   ) : (
                     settlements.map((s: any) => (
                       <TableRow key={s.id}>
-                        <TableCell className="font-mono">{s.member?.memberNumber ?? "-"}</TableCell>
+                        <TableCell className="font-mono">
+                          {s.member?.memberNumber ?? "-"}
+                          {s.suffix ? <span className="ml-0.5 text-blue-600 font-bold">-{s.suffix}</span> : null}
+                        </TableCell>
                         <TableCell>{s.member?.displayName ?? "-"}</TableCell>
                         <TableCell className="text-right">¥{s.salesTotal.toLocaleString()}</TableCell>
                         <TableCell className="text-right">¥{s.purchaseTotal.toLocaleString()}</TableCell>

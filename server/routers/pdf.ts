@@ -24,11 +24,18 @@ export async function getSettlementPdfDataInternal(settlementId: number) {
       const event = await db.getEventById(s.eventId);
       const txns = await db.listTransactions(s.eventId);
 
+      // 伝票分割（A/B/C）対応: settlement.suffix と一致する取引のみ抽出
+      const targetSuffix = (s as any).suffix ?? null;
+      const matchSeller = (t: any) =>
+        t.sellerMemberId === s.memberId && ((t.sellerSuffix ?? null) === targetSuffix);
+      const matchBuyer = (t: any) =>
+        t.buyerMemberId === s.memberId && ((t.buyerSuffix ?? null) === targetSuffix);
+
       // 通常取引と返品取引を分離
-      const salesTxns = txns.filter(t => t.sellerMemberId === s.memberId && t.transactionType !== "return");
-      const purchaseTxns = txns.filter(t => t.buyerMemberId === s.memberId && t.transactionType !== "return");
-      const salesReturnTxns = txns.filter(t => t.sellerMemberId === s.memberId && t.transactionType === "return");
-      const purchaseReturnTxns = txns.filter(t => t.buyerMemberId === s.memberId && t.transactionType === "return");
+      const salesTxns = txns.filter(t => matchSeller(t) && t.transactionType !== "return");
+      const purchaseTxns = txns.filter(t => matchBuyer(t) && t.transactionType !== "return");
+      const salesReturnTxns = txns.filter(t => matchSeller(t) && t.transactionType === "return");
+      const purchaseReturnTxns = txns.filter(t => matchBuyer(t) && t.transactionType === "return");
 
       // Build member cache with invoice numbers
       const memberCache = new Map<number, { id: number; memberNumber: number; displayName: string; invoiceNumber: string | null; isTaxable: boolean }>();
@@ -189,11 +196,17 @@ export async function getBulkSettlementPdfData(eventId: number) {
   const results = [];
   for (const s of settlementList) {
     const member = memberById.get(s.memberId);
+    // 伝票分割（A/B/C）対応: settlement.suffix と一致する取引のみ抽出
+    const targetSuffix = (s as any).suffix ?? null;
+    const matchSeller = (t: any) =>
+      t.sellerMemberId === s.memberId && ((t.sellerSuffix ?? null) === targetSuffix);
+    const matchBuyer = (t: any) =>
+      t.buyerMemberId === s.memberId && ((t.buyerSuffix ?? null) === targetSuffix);
     // 通常取引と返品取引を分離
-    const salesTxns = allTxns.filter(t => t.sellerMemberId === s.memberId && t.transactionType !== "return");
-    const purchaseTxns = allTxns.filter(t => t.buyerMemberId === s.memberId && t.transactionType !== "return");
-    const salesReturnTxns = allTxns.filter(t => t.sellerMemberId === s.memberId && t.transactionType === "return");
-    const purchaseReturnTxns = allTxns.filter(t => t.buyerMemberId === s.memberId && t.transactionType === "return");
+    const salesTxns = allTxns.filter(t => matchSeller(t) && t.transactionType !== "return");
+    const purchaseTxns = allTxns.filter(t => matchBuyer(t) && t.transactionType !== "return");
+    const salesReturnTxns = allTxns.filter(t => matchSeller(t) && t.transactionType === "return");
+    const purchaseReturnTxns = allTxns.filter(t => matchBuyer(t) && t.transactionType === "return");
 
     // Enrich sales with buyer info (from pre-fetched member map)
     const enrichedSales = salesTxns.map(t => {
