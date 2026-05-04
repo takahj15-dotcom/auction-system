@@ -40,8 +40,10 @@ export async function createContext(
     user = null;
   }
 
-  // 開発モードでは自動的に管理者ユーザーを作成・ログイン状態にする
-  if (!user && process.env.NODE_ENV !== "production") {
+  // 開発モードでは自動的に管理者ユーザーを作成・ログイン状態にする。
+  // NODE_ENV を whitelist で判定し、未設定 / "prod" / "staging" 等の値では
+  // 発火しないようにする（本番環境で誤って認証バイパスが起きるのを防ぐ）。
+  if (!user && process.env.NODE_ENV === "development") {
     user = await ensureDevAdmin();
   }
 

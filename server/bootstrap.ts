@@ -8,9 +8,12 @@ import { eq, sql } from "drizzle-orm";
 /**
  * 起動時に呼ばれる初期化処理:
  * 1. drizzle/ 以下のSQLファイルを順次実行してテーブル作成（存在しなければ）
- * 2. 空であればサンプル会員とサンプルイベントを投入
+ * 2. 空であればサンプル会員とサンプルイベントを投入（本番環境ではスキップ）
  */
 export async function bootstrapDatabase() {
+  // 本番環境ではサンプルデータ（既知パスワード `0000` の会員8件 / デモイベント）を投入しない。
+  // NODE_ENV が "production" 以外の場合のみ seed を実行する。
+  const allowDemoSeed = process.env.NODE_ENV !== "production";
   const db = await getDb();
   if (!db) {
     console.error("[Bootstrap] DB not available; aborting");
@@ -54,9 +57,12 @@ export async function bootstrapDatabase() {
     console.log(`[Bootstrap] Applied migration ${file}`);
   }
 
-  // 2. サンプルデータ投入（会員が0件の場合のみ）
+  // 2. サンプルデータ投入（会員が0件の場合のみ、かつ本番環境以外）
   const [memberCount] = await db.select({ count: sql<number>`count(*)` }).from(schema.members);
-  if ((memberCount?.count ?? 0) === 0) {
+  if (!allowDemoSeed && (memberCount?.count ?? 0) === 0) {
+    console.log("[Bootstrap] Skipping sample members seed (NODE_ENV=production)");
+  }
+  if (allowDemoSeed && (memberCount?.count ?? 0) === 0) {
     console.log("[Bootstrap] Seeding sample members...");
     const defaultPassword = await bcrypt.hash("0000", 10);
     const sampleMembers: schema.InsertMember[] = [
@@ -72,9 +78,9 @@ export async function bootstrapDatabase() {
     await db.insert(schema.members).values(sampleMembers);
   }
 
-  // サンプルイベント
+  // サンプルイベント（本番環境ではスキップ）
   const [eventCount] = await db.select({ count: sql<number>`count(*)` }).from(schema.events);
-  if ((eventCount?.count ?? 0) === 0) {
+  if (allowDemoSeed && (eventCount?.count ?? 0) === 0) {
     console.log("[Bootstrap] Seeding sample event...");
     const today = new Date().toISOString().slice(0, 10);
     await db.insert(schema.events).values({

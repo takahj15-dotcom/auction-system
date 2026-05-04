@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import helmet from "helmet";
 import { createServer } from "http";
 import net from "net";
 import path from "node:path";
@@ -8,6 +9,8 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { requireAdmin, requireCookieSession, requireSessionOrPortalToken, type AuthenticatedRequest } from "./httpAuth";
+import { apiRateLimit, authRateLimit } from "./rateLimit";
 import { serveStatic, setupVite } from "./vite";
 import { getSettlementPdfDataInternal, getBulkSettlementPdfData } from "../routers/pdf";
 import { generateSettlementPdf, generateBulkSettlementPdf, generateRegisterClosingPdf } from "../pdfGenerator";
@@ -41,24 +44,51 @@ async function startServer() {
 
   const app = express();
   const server = createServer(app);
+  // リバースプロキシ経由を想定し、X-Forwarded-For の最初の hop を信頼する。
+  // express-rate-limit が正しいクライアント IP を取得できるようにするため。
+  app.set("trust proxy", 1);
+  // セキュリティヘッダ。CSP は SPA + 外部 OAuth + 地図サービス等の都合で
+  // 別途設計するため、ここでは無効化して他のヘッダ (HSTS, X-Frame-Options,
+  // X-Content-Type-Options, Referrer-Policy など) を有効化する。
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: "same-site" },
+    })
+  );
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  // Serve local uploads (signatures, seal images, etc.)
+  // Serve local uploads. signatures は会員の個人情報なので cookie セッション必須、
+  // seal-images は会社の印影で会員ポータル側でも <img> 表示するため公開のままにする。
   const uploadDir = getLocalUploadDir();
   fs.mkdirSync(uploadDir, { recursive: true });
-  app.use("/uploads", express.static(uploadDir));
+  fs.mkdirSync(path.join(uploadDir, "signatures"), { recursive: true });
+  fs.mkdirSync(path.join(uploadDir, "seal-images"), { recursive: true });
+  app.use(
+    "/uploads/signatures",
+    requireCookieSession,
+    express.static(path.join(uploadDir, "signatures"))
+  );
+  app.use("/uploads/seal-images", express.static(path.join(uploadDir, "seal-images")));
 
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // PDF download endpoint
-  app.get("/api/pdf/settlement/:id", async (req, res) => {
+  // 認可: 管理者 cookie セッション or 会員ポータル token (?token=)。
+  // 会員ポータル経由の場合は本人の精算データのみアクセス可。
+  app.get("/api/pdf/settlement/:id", requireSessionOrPortalToken, async (req: AuthenticatedRequest, res) => {
     try {
       const settlementId = parseInt(req.params.id);
       if (isNaN(settlementId)) {
         return res.status(400).json({ error: "Invalid settlement ID" });
       }
       const data = await getSettlementPdfDataInternal(settlementId);
+      // ポータルトークン経由の場合、本人の精算データかチェック
+      if (req.portalMemberId !== undefined && data.settlement.memberId !== req.portalMemberId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const pdfBuffer = await generateSettlementPdf(data);
       const memberName = data.member?.displayName ?? "unknown";
       const eventDate = data.event?.eventDate ?? "unknown";
@@ -77,7 +107,8 @@ async function startServer() {
   });
 
   // Bulk PDF download endpoint (all settlements for an event)
-  app.get("/api/pdf/bulk/:eventId", async (req, res) => {
+  // 認可: 管理者のみ。
+  app.get("/api/pdf/bulk/:eventId", requireAdmin, async (req, res) => {
     try {
       const eventId = parseInt(req.params.eventId);
       if (isNaN(eventId)) {
@@ -103,7 +134,8 @@ async function startServer() {
   });
 
   // Register closing receipt PDF endpoint
-  app.get("/api/pdf/register-closing/:eventId", async (req, res) => {
+  // 認可: 管理者のみ。
+  app.get("/api/pdf/register-closing/:eventId", requireAdmin, async (req, res) => {
     try {
       const eventId = parseInt(req.params.eventId);
       if (isNaN(eventId)) {
@@ -164,7 +196,8 @@ async function startServer() {
   });
 
   // Excel export endpoint
-  app.get("/api/excel/transactions/:eventId", async (req, res) => {
+  // 認可: 管理者のみ。
+  app.get("/api/excel/transactions/:eventId", requireAdmin, async (req, res) => {
     try {
       const eventId = parseInt(req.params.eventId);
       if (isNaN(eventId)) {
@@ -217,8 +250,19 @@ async function startServer() {
   });
 
   // tRPC API
+  // - portal.login は 4 桁パスワードのブルートフォース対策で厳格な制限 (15分5回)。
+  //   tRPC のバッチ URL は "/api/trpc/portal.login" や "/api/trpc/portal.login,system.health"
+  //   等の形になるため、URL に "portal.login" を含むかで判定する。
+  // - その他の経路は緩い制限 (1分300回) を全体に適用。
+  app.use("/api/trpc", (req, res, next) => {
+    if (req.url.includes("portal.login")) {
+      return authRateLimit(req, res, next);
+    }
+    next();
+  });
   app.use(
     "/api/trpc",
+    apiRateLimit,
     createExpressMiddleware({
       router: appRouter,
       createContext,

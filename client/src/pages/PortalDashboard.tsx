@@ -55,15 +55,17 @@ export default function PortalDashboard() {
 
   const handleDownloadPdf = async (settlementId: number, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!token) return;
+    const tokenParam = encodeURIComponent(token);
     setDownloadingId(settlementId);
     try {
       if (isMobileDevice()) {
         // Mobile: Open PDF directly in browser tab using inline mode
         // This is the most reliable method for iOS Safari and Android Chrome
-        window.open(`/api/pdf/settlement/${settlementId}?inline=1`, "_blank");
+        window.open(`/api/pdf/settlement/${settlementId}?inline=1&token=${tokenParam}`, "_blank");
       } else {
         // Desktop: Use fetch + blob for proper download with filename
-        const response = await fetch(`/api/pdf/settlement/${settlementId}`);
+        const response = await fetch(`/api/pdf/settlement/${settlementId}?token=${tokenParam}`);
         if (!response.ok) throw new Error("PDF generation failed");
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -81,7 +83,7 @@ export default function PortalDashboard() {
     } catch (err) {
       // Fallback: try window.open as last resort
       try {
-        window.open(`/api/pdf/settlement/${settlementId}?inline=1`, "_blank");
+        window.open(`/api/pdf/settlement/${settlementId}?inline=1&token=${tokenParam}`, "_blank");
       } catch {
         alert("PDFのダウンロードに失敗しました。しばらくしてからもう一度お試しください。");
       }
