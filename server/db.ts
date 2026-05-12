@@ -37,8 +37,8 @@ export async function getDb() {
       _sqlite.pragma("foreign_keys = ON");
       _db = drizzle(_sqlite);
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
+      console.error("[Database] Failed to connect:", error);
+      throw error;
     }
   }
   return _db;

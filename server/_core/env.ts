@@ -37,6 +37,7 @@ export const ENV = {
   appId: readEnv("VITE_APP_ID"),
   cookieSecret: readEnv("JWT_SECRET", { minLength: 32 }),
   databaseUrl: readEnv("DATABASE_URL", { required: false }),
+  uploadDir: readEnv("UPLOAD_DIR", { required: false }),
   oAuthServerUrl: readEnv("OAUTH_SERVER_URL"),
   ownerOpenId: readEnv("OWNER_OPEN_ID", { required: false }),
   isProduction: isProd,

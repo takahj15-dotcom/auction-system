@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENV } from "./_core/env";
 
-const LOCAL_UPLOAD_DIR = path.resolve(process.cwd(), "uploads");
+const LOCAL_UPLOAD_DIR = path.resolve(ENV.uploadDir || "uploads");
 
 function hasForgeCreds() {
   return Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
