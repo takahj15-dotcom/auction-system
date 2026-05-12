@@ -11,13 +11,12 @@ import { eq, sql } from "drizzle-orm";
  * 2. 空であればサンプル会員とサンプルイベントを投入（本番環境ではスキップ）
  */
 export async function bootstrapDatabase() {
-  // 本番環境ではサンプルデータ（既知パスワード `0000` の会員8件 / デモイベント）を投入しない。
+  // 本番環境ではサンプルデータ（開発用パスワードの会員8件 / デモイベント）を投入しない。
   // NODE_ENV が "production" 以外の場合のみ seed を実行する。
   const allowDemoSeed = process.env.NODE_ENV !== "production";
   const db = await getDb();
   if (!db) {
-    console.error("[Bootstrap] DB not available; aborting");
-    return;
+    throw new Error("[Bootstrap] DB not available; aborting");
   }
 
   // 1. マイグレーション（簡易版: drizzle/*.sql を全部実行。CREATE TABLE IF NOT EXISTS相当に変換）
@@ -64,7 +63,7 @@ export async function bootstrapDatabase() {
   }
   if (allowDemoSeed && (memberCount?.count ?? 0) === 0) {
     console.log("[Bootstrap] Seeding sample members...");
-    const defaultPassword = await bcrypt.hash("0000", 10);
+    const defaultPassword = await bcrypt.hash("dev-password", 10);
     const sampleMembers: schema.InsertMember[] = [
       { memberNumber: 1, displayName: "山田商店", tradeName: "山田商店", representative: "山田太郎", phone: "058-111-0001", mobile: "090-1111-0001", email: "yamada@example.com", postalCode: "500-0001", prefecture: "岐阜県", address: "岐阜市本町1-1", sellCommissionRate: "10.00", buyCommissionRate: "5.00", password: defaultPassword, requirePasswordChange: false },
       { memberNumber: 2, displayName: "佐藤リサイクル", tradeName: "佐藤リサイクル", representative: "佐藤花子", phone: "058-222-0002", mobile: "090-2222-0002", email: "sato@example.com", postalCode: "500-0002", prefecture: "岐阜県", address: "岐阜市神田町2-2", sellCommissionRate: "10.00", buyCommissionRate: "5.00", password: defaultPassword, requirePasswordChange: false },

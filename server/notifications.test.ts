@@ -25,8 +25,8 @@ vi.mock("./db", () => {
     countUnreadNotifications: vi.fn(async (memberId: number) => {
       return notifications.filter(n => n.memberId === memberId && !n.isRead).length;
     }),
-    markNotificationRead: vi.fn(async (id: number) => {
-      const notif = notifications.find(n => n.id === id);
+    markNotificationRead: vi.fn(async (id: number, memberId: number) => {
+      const notif = notifications.find(n => n.id === id && n.memberId === memberId);
       if (notif) {
         notif.isRead = true;
         notif.readAt = new Date();
@@ -116,7 +116,7 @@ describe("Member Notifications", () => {
       { memberId: 1, title: "通知2", type: "settlement" as const },
     ]);
 
-    await db.markNotificationRead(1);
+    await db.markNotificationRead(1, 1);
 
     const allNotifs = (db as any)._getNotifications();
     expect(allNotifs[0].isRead).toBe(true);
@@ -125,6 +125,19 @@ describe("Member Notifications", () => {
 
     const unreadCount = await db.countUnreadNotifications(1);
     expect(unreadCount).toBe(1);
+  });
+
+  it("should not mark another member's notification as read", async () => {
+    await db.bulkCreateMemberNotifications([
+      { memberId: 1, title: "通知1", type: "settlement" as const },
+      { memberId: 2, title: "通知2", type: "settlement" as const },
+    ]);
+
+    await db.markNotificationRead(2, 1);
+
+    const allNotifs = (db as any)._getNotifications();
+    expect(allNotifs[1].isRead).toBe(false);
+    expect(await db.countUnreadNotifications(2)).toBe(1);
   });
 
   it("should mark all notifications as read for a member", async () => {

@@ -75,7 +75,7 @@ const ScreenMock = ({ title, children }: { title: string; children: React.ReactN
 
 type Section = {
   id: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   title: string;
   color: string;
   render: () => React.ReactNode;
@@ -356,7 +356,7 @@ const MembersSection = () => (
 
     <Step n={1} title="会員を追加">番号・氏名・屋号・連絡先を登録。番号は一意です。</Step>
     <Step n={2} title="表示名と屋号">受付・精算書には屋号が優先表示されます。</Step>
-    <Step n={3} title="ポータルパスワード発行">会員がスマホで自分の精算履歴を見るための初期パスワードを発行。</Step>
+    <Step n={3} title="ポータルパスワード発行">会員がスマホで自分の精算履歴を見るための仮パスワードを発行。</Step>
     <Tip>一括CSVインポート対応。既存システムからの移行にご利用ください。</Tip>
   </div>
 );

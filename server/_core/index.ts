@@ -250,12 +250,12 @@ async function startServer() {
   });
 
   // tRPC API
-  // - portal.login は 4 桁パスワードのブルートフォース対策で厳格な制限 (15分5回)。
+  // - portal.login / portal.changePassword は認証情報を扱うため厳格な制限 (15分5回)。
   //   tRPC のバッチ URL は "/api/trpc/portal.login" や "/api/trpc/portal.login,system.health"
   //   等の形になるため、URL に "portal.login" を含むかで判定する。
   // - その他の経路は緩い制限 (1分300回) を全体に適用。
   app.use("/api/trpc", (req, res, next) => {
-    if (req.url.includes("portal.login")) {
+    if (req.url.includes("portal.login") || req.url.includes("portal.changePassword")) {
       return authRateLimit(req, res, next);
     }
     next();
