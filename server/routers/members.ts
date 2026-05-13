@@ -11,6 +11,13 @@ export const membersRouter = router({
       return db.listMembers(input?.activeOnly ?? true);
     }),
 
+  // 会員一覧 + 失効判定（最終活動から1年経過か）
+  listWithActivity: protectedProcedure
+    .input(z.object({ activeOnly: z.boolean().optional().default(true) }).optional())
+    .query(async ({ input }) => {
+      return db.listMembersWithActivity(input?.activeOnly ?? true);
+    }),
+
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
@@ -31,6 +38,9 @@ export const membersRouter = router({
       representative: z.string().optional(),
       invoiceNumber: z.string().optional(),
       antiquePermitNumber: z.string().optional(),
+      antiquePermitPrefecture: z.string().optional(),
+      tradeNameKana: z.string().optional(),
+      displayNameKana: z.string().optional(),
       sellCommissionRate: z.string().optional().default("10.00"),
       buyCommissionRate: z.string().optional().default("5.00"),
       useCustomCommission: z.boolean().optional().default(false),
@@ -64,6 +74,9 @@ export const membersRouter = router({
       representative: z.string().optional(),
       invoiceNumber: z.string().optional(),
       antiquePermitNumber: z.string().optional(),
+      antiquePermitPrefecture: z.string().optional(),
+      tradeNameKana: z.string().optional(),
+      displayNameKana: z.string().optional(),
       sellCommissionRate: z.string().optional(),
       buyCommissionRate: z.string().optional(),
       useCustomCommission: z.boolean().optional(),

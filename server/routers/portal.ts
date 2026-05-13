@@ -134,6 +134,7 @@ export const portalRouter = router({
       const decoded = verifyMemberToken(input.token);
       const member = await db.getMemberById(decoded.memberId);
       if (!member) throw new TRPCError({ code: "NOT_FOUND" });
+      const activity = await db.getMemberActivityStatus(decoded.memberId);
       return {
         id: member.id,
         memberNumber: member.memberNumber,
@@ -143,6 +144,8 @@ export const portalRouter = router({
         phone: member.phone,
         email: member.email,
         requirePasswordChange: member.requirePasswordChange,
+        lastActivityAt: activity.lastActivityAt,
+        isExpired: activity.isExpired,
       };
     }),
 
@@ -164,12 +167,19 @@ export const portalRouter = router({
       const memberMap = new Map(allMembers.map((m: any) => [m.id, m]));
       const sealImageUrl = (await db.getSetting("seal_image_url"))?.settingValue || null;
 
+      // 伝票分割（A/B/C）対応: settlement.suffix と一致する取引のみ抽出
+      const targetSuffix = (s as any).suffix ?? null;
+      const matchSeller = (t: any) =>
+        t.sellerMemberId === s.memberId && ((t.sellerSuffix ?? null) === targetSuffix);
+      const matchBuyer = (t: any) =>
+        t.buyerMemberId === s.memberId && ((t.buyerSuffix ?? null) === targetSuffix);
+
       // Separate normal and return transactions
       const normalTxns = txns.filter((t: any) => t.transactionType !== "return");
       const returnTxns = txns.filter((t: any) => t.transactionType === "return");
 
       const salesTransactions = normalTxns
-        .filter((t: any) => t.sellerMemberId === s.memberId)
+        .filter(matchSeller)
         .map((t: any) => {
           const buyer = memberMap.get(t.buyerMemberId);
           return {
@@ -180,7 +190,7 @@ export const portalRouter = router({
         });
 
       const purchaseTransactions = normalTxns
-        .filter((t: any) => t.buyerMemberId === s.memberId)
+        .filter(matchBuyer)
         .map((t: any) => {
           const seller = memberMap.get(t.sellerMemberId);
           return {
@@ -192,7 +202,7 @@ export const portalRouter = router({
 
       // Return transactions (seller side = 売返品, buyer side = 買返品)
       const salesReturnTransactions = returnTxns
-        .filter((t: any) => t.sellerMemberId === s.memberId)
+        .filter(matchSeller)
         .map((t: any) => {
           const buyer = memberMap.get(t.buyerMemberId);
           return {
@@ -203,7 +213,7 @@ export const portalRouter = router({
         });
 
       const purchaseReturnTransactions = returnTxns
-        .filter((t: any) => t.buyerMemberId === s.memberId)
+        .filter(matchBuyer)
         .map((t: any) => {
           const seller = memberMap.get(t.sellerMemberId);
           return {

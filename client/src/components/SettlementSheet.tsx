@@ -35,7 +35,7 @@ export function SettlementSheet({ data, pageBreakAfter = false }: SettlementShee
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
         <div style={{ flex: "0 0 45%" }}>
           <p style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>
-            {member?.memberNumber}　{member?.displayName}　<span style={{ fontWeight: 400 }}>様</span>
+            {member?.memberNumber}{settlement?.suffix ? <span style={{ color: "#1d4ed8" }}>-{settlement.suffix}</span> : null}　{member?.displayName}　<span style={{ fontWeight: 400 }}>様</span>
           </p>
           <div style={{ marginTop: 16, fontSize: 11, lineHeight: 1.8, position: "relative" }}>
             <p style={{ fontWeight: 700 }}>岐阜リサイクルオークション</p>
@@ -238,10 +238,55 @@ export function SettlementSheet({ data, pageBreakAfter = false }: SettlementShee
 export function getSettlementSheetStyles(): string {
   return `
     @media print {
-      body { margin: 0; padding: 0; }
+      /* A4 サイズに収まるように余白とサイズを調整（上下・左右ともゆとりを確保）
+         上部は2枚目以降の1行目が切れないよう1行分多めに確保 */
+      @page { size: A4 portrait; margin: 28mm 18mm 22mm 18mm; }
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
       .no-print { display: none !important; }
-      .settlement-sheet { padding: 16px !important; max-width: none !important; box-shadow: none !important; border-radius: 0 !important; }
-      @page { size: A4; margin: 10mm; }
+      .settlement-sheet {
+        /* @page の余白に任せ、シート自身のパディングは小さめに */
+        padding: 4mm !important;
+        max-width: 174mm !important; /* A4幅(210) - 左右マージン(18*2) */
+        width: 174mm !important;
+        margin: 0 auto !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        font-size: 10.5px !important;
+        box-sizing: border-box !important;
+      }
+      /* テーブルが枠外にはみ出ないようレイアウトを固定 */
+      .settlement-sheet table {
+        width: 100% !important;
+        table-layout: fixed !important;
+        border-collapse: collapse !important;
+      }
+      .settlement-sheet table th,
+      .settlement-sheet table td {
+        word-break: break-all;
+        overflow-wrap: anywhere;
+      }
+      /* 行（tr）と表ヘッダー（thead）はページをまたいで切れないように。
+         tbody 全体は avoid しない（途中改行を許可しないと、表が長い時に
+         1ページ目の下半分が大きく空白になってしまうため） */
+      .settlement-sheet table tr,
+      .settlement-sheet table thead {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      /* tbody は自然に改ページさせる */
+      .settlement-sheet table tbody {
+        page-break-inside: auto !important;
+        break-inside: auto !important;
+      }
+      /* テーブルヘッダーを2枚目以降も繰り返し表示 */
+      .settlement-sheet table thead {
+        display: table-header-group !important;
+      }
     }
     .summary-table td {
       border-right: 1px solid #ccc;

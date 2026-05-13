@@ -3,235 +3,18 @@ import { trpc } from "@/lib/trpc";
 import { useEvent } from "@/contexts/EventContext";
 import { Trash2, RefreshCw, ArrowDown, ArrowUp, Unlock, Plus, Download, Search, X } from "lucide-react";
 import { toast } from "sonner";
+import { parseMemberNumberInput, formatMemberNumber, type MemberNumberSuffix } from "@shared/memberNumber";
 
-/* ─── 商品名オートコンプリートコンポーネント ─── */
-function ItemNameAutocomplete({
-  value,
-  onChange,
-  onKeyDown,
-  inputRef,
-  className,
-  placeholder,
-  style,
-  onCompositionChange,
-}: {
-  value: string;
-  onChange: (val: string) => void;
-  onKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
-  inputRef: React.RefObject<HTMLInputElement | null>;
-  className: string;
-  placeholder: string;
-  style?: React.CSSProperties;
-  onCompositionChange?: (isComposing: boolean) => void;
-}) {
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [searchText, setSearchText] = useState(value);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const isComposingRef = useRef(false);
 
-  // 外部からvalueが変更された場合（resetForm等）にinputを同期
-  useEffect(() => {
-    setSearchText(value);
-    if (inputRef.current && inputRef.current.value !== value) {
-      inputRef.current.value = value;
-    }
-  }, [value, inputRef]);
-
-  // よく使う商品名を初回ロード
-  const { data: frequentNames = [] } = trpc.transactions.frequentItemNames.useQuery(
-    undefined,
-    { staleTime: 60000 }
-  );
-
-  // 入力中のクエリで候補を検索
-  const { data: searchResults = [] } = trpc.transactions.itemNameSuggestions.useQuery(
-    { query: searchText },
-    { enabled: searchText.length >= 1, staleTime: 10000 }
-  );
-
-  // 候補リスト: 入力があれば検索結果、なければよく使う商品名
-  const suggestions = useMemo(() => {
-    if (searchText.length >= 1) return searchResults;
-    return frequentNames.slice(0, 15);
-  }, [searchText, searchResults, frequentNames]);
-
-  // 外側クリックで候補を閉じる
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const selectSuggestion = useCallback((name: string) => {
-    onChange(name);
-    setSearchText(name);
-    if (inputRef.current) inputRef.current.value = name;
-    setShowSuggestions(false);
-    setSelectedIndex(-1);
-  }, [onChange, inputRef]);
-
-  const handleInputKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
-    if (showSuggestions && suggestions.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedIndex((prev) => Math.min(prev + 1, suggestions.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedIndex((prev) => Math.max(prev - 1, -1));
-        return;
-      }
-      if (e.key === "Enter" && selectedIndex >= 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        selectSuggestion(suggestions[selectedIndex]);
-        return;
-      }
-      if (e.key === "Tab" && selectedIndex >= 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        selectSuggestion(suggestions[selectedIndex]);
-        return;
-      }
-      if (e.key === "Tab" && suggestions.length > 0 && selectedIndex === -1) {
-        // Tab押下時に候補があるが未選択の場合、最初の候補を選択
-        e.preventDefault();
-        e.stopPropagation();
-        selectSuggestion(suggestions[0]);
-        return;
-      }
-      if (e.key === "Escape") {
-        setShowSuggestions(false);
-        setSelectedIndex(-1);
-        return;
-      }
-    }
-    // 候補が選択されていない場合は通常のキーハンドリングを実行
-    onKeyDown(e);
-  }, [showSuggestions, suggestions, selectedIndex, selectSuggestion, onKeyDown]);
-
-  // 選択中の候補をスクロールで見えるように
-  useEffect(() => {
-    if (selectedIndex >= 0 && suggestionsRef.current) {
-      const items = suggestionsRef.current.querySelectorAll('[data-suggestion]');
-      items[selectedIndex]?.scrollIntoView({ block: 'nearest' });
-    }
-  }, [selectedIndex]);
-
-  // IME安全な値取得ヘルパー
-  const getCurrentValue = useCallback(() => {
-    return inputRef.current?.value ?? "";
-  }, [inputRef]);
-
-  return (
-    <div ref={containerRef} className="relative">
-      <input
-        ref={inputRef}
-        type="text"
-        inputMode="text"
-        defaultValue={value}
-        className={className}
-        placeholder={placeholder}
-        style={{ imeMode: "active", ...style } as React.CSSProperties}
-        onCompositionStart={() => {
-          isComposingRef.current = true;
-          onCompositionChange?.(true);
-        }}
-        onCompositionEnd={() => {
-          // Windows IMEではcompositionEndがinputより先に発火する場合がある
-          // またisComposingフラグのリセットも少し遅らせる（Enterキーとの競合防止）
-          setTimeout(() => {
-            isComposingRef.current = false;
-            onCompositionChange?.(false);
-            const val = getCurrentValue();
-            onChange(val);
-            setSearchText(val);
-            setShowSuggestions(val.length > 0);
-            setSelectedIndex(-1);
-          }, 20);
-        }}
-        onInput={() => {
-          // IME変換中はstate更新をスキップ（再レンダリングによるIMEリセット防止）
-          if (isComposingRef.current) return;
-          const val = getCurrentValue();
-          onChange(val);
-          setSearchText(val);
-          setShowSuggestions(val.length > 0);
-          setSelectedIndex(-1);
-        }}
-        onFocus={() => { /* 文字入力時のみ候補表示 */ }}
-        onKeyDown={(e) => {
-          // IME変換中はキーナビゲーションを無視（isComposing + keyCode 229 チェック）
-          if (isComposingRef.current || e.nativeEvent.isComposing || (e.nativeEvent as any).keyCode === 229) return;
-          handleInputKeyDown(e);
-        }}
-      />
-      {showSuggestions && suggestions.length > 0 && (
-        <div
-          ref={suggestionsRef}
-          className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover text-popover-foreground border rounded-md shadow-lg max-h-48 overflow-y-auto"
-        >
-          {searchText.length === 0 && (
-            <div className="px-2 py-1 text-[10px] text-muted-foreground border-b">
-              よく使う商品名
-            </div>
-          )}
-          {suggestions.map((name, i) => (
-            <div
-              key={name}
-              data-suggestion
-              className={`px-2 py-1.5 text-sm cursor-pointer transition-colors ${
-                i === selectedIndex
-                  ? "bg-accent text-accent-foreground"
-                  : "hover:bg-accent/50"
-              }`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                selectSuggestion(name);
-              }}
-              onMouseEnter={() => setSelectedIndex(i)}
-            >
-              {searchText.length >= 1 ? (
-                <HighlightMatch text={name} query={searchText} />
-              ) : (
-                name
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* マッチハイライトコンポーネント */
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  const lowerText = text.toLowerCase();
-  const lowerQuery = query.toLowerCase();
-  const idx = lowerText.indexOf(lowerQuery);
-  if (idx === -1) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <span className="font-bold text-primary">{text.slice(idx, idx + query.length)}</span>
-      {text.slice(idx + query.length)}
-    </>
-  );
-}
 
 type GridRow = {
   id?: number;
   rowNumber: number;
   sellerMemberId: number;
+  sellerSuffix: MemberNumberSuffix;
   sellerName: string;
   buyerMemberId: number;
+  buyerSuffix: MemberNumberSuffix;
   buyerName: string;
   itemName: string;
   unitPrice: number;
@@ -263,8 +46,10 @@ function makeEmptyRow(rowNumber: number): GridRow {
   return {
     rowNumber,
     sellerMemberId: 0,
+    sellerSuffix: null,
     sellerName: "",
     buyerMemberId: 0,
+    buyerSuffix: null,
     buyerName: "",
     itemName: "",
     unitPrice: 0,
@@ -373,8 +158,10 @@ function CellInput({
 /* ─── Quick Entry Form (Full Field Input Box) ─── */
 type QuickEntryData = {
   sellerMemberId: number;
+  sellerSuffix: MemberNumberSuffix;
   sellerName: string;
   buyerMemberId: number;
+  buyerSuffix: MemberNumberSuffix;
   buyerName: string;
   itemName: string;
   unitPrice: number;
@@ -398,14 +185,16 @@ function QuickEntryForm({
     return map;
   }, [members]);
 
-  const [sellerNumber, setSellerNumber] = useState("");
+  const [sellerNumber, setSellerNumber] = useState(""); // 入力文字列（"1-A" 等を許容）
   const [sellerMemberId, setSellerMemberId] = useState(0);
+  const [sellerSuffix, setSellerSuffix] = useState<MemberNumberSuffix>(null);
   const [sellerDisplayName, setSellerDisplayName] = useState("");
   const [itemName, setItemName] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [buyerNumber, setBuyerNumber] = useState("");
   const [buyerMemberId, setBuyerMemberId] = useState(0);
+  const [buyerSuffix, setBuyerSuffix] = useState<MemberNumberSuffix>(null);
   const [buyerDisplayName, setBuyerDisplayName] = useState("");
   const [transactionType, setTransactionType] = useState("normal");
   const [sameNumberError, setSameNumberError] = useState(false);
@@ -426,32 +215,40 @@ function QuickEntryForm({
   const enterCountRef = useRef(0);
   const enterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Resolve member number to member
-  const resolveSeller = useCallback((numStr: string) => {
-    const num = parseInt(numStr);
-    if (!isNaN(num)) {
-      const m = memberByNumber.get(num);
+  // Resolve "1" / "1-A" 等の入力 → 会員ID + 枝番
+  const resolveSeller = useCallback((raw: string) => {
+    const { number, suffix } = parseMemberNumberInput(raw);
+    if (!isNaN(number)) {
+      const m = memberByNumber.get(number);
       if (m) {
         setSellerMemberId(m.id);
+        setSellerSuffix(suffix);
         setSellerDisplayName(m.displayName);
-        onSellerChange({ id: m.id, name: `${m.memberNumber} ${m.displayName}` });
+        onSellerChange({ id: m.id, name: `${formatMemberNumber(m.memberNumber, suffix)} ${m.displayName}` });
         return;
       }
     }
     setSellerMemberId(0);
+    setSellerSuffix(null);
     setSellerDisplayName("");
     onSellerChange(null);
   }, [memberByNumber, onSellerChange]);
 
-  const resolveBuyer = useCallback((numStr: string) => {
-    const num = parseInt(numStr);
-    if (!isNaN(num)) {
-      const m = memberByNumber.get(num);
+  const resolveBuyer = useCallback((raw: string) => {
+    const { number, suffix } = parseMemberNumberInput(raw);
+    if (!isNaN(number)) {
+      const m = memberByNumber.get(number);
       if (m) {
         setBuyerMemberId(m.id);
+        setBuyerSuffix(suffix);
         setBuyerDisplayName(m.displayName);
-        // Check same number
-        if (sellerNumber && parseInt(sellerNumber) === num) {
+        // 同番号チェック（枝番が違えば別伝票なのでOK）
+        const sellerParsed = parseMemberNumberInput(sellerNumber);
+        if (
+          !isNaN(sellerParsed.number) &&
+          sellerParsed.number === number &&
+          (sellerParsed.suffix ?? null) === (suffix ?? null)
+        ) {
           setSameNumberError(true);
         } else {
           setSameNumberError(false);
@@ -460,13 +257,21 @@ function QuickEntryForm({
       }
     }
     setBuyerMemberId(0);
+    setBuyerSuffix(null);
     setBuyerDisplayName("");
     setSameNumberError(false);
   }, [memberByNumber, sellerNumber]);
 
-  // Check same number when seller changes
+  // 売主・買主が同じ会員番号 + 同じ枝番のときだけエラー
   useEffect(() => {
-    if (sellerNumber && buyerNumber && sellerNumber === buyerNumber) {
+    const s = parseMemberNumberInput(sellerNumber);
+    const b = parseMemberNumberInput(buyerNumber);
+    if (
+      !isNaN(s.number) &&
+      !isNaN(b.number) &&
+      s.number === b.number &&
+      (s.suffix ?? null) === (b.suffix ?? null)
+    ) {
       setSameNumberError(true);
     } else {
       setSameNumberError(false);
@@ -484,6 +289,7 @@ function QuickEntryForm({
     setQuantity("1");
     setBuyerNumber("");
     setBuyerMemberId(0);
+    setBuyerSuffix(null);
     setBuyerDisplayName("");
     setSameNumberError(false);
     // Focus to itemName since seller is kept
@@ -510,16 +316,21 @@ function QuickEntryForm({
       return;
     }
     if (sameNumberError) {
-      toast.error("売主と買主が同じ番号です。異なる番号を入力してください");
+      toast.error("売主と買主が同じ伝票（同番号・同枝番）です。異なる枝番か別の番号を入力してください");
       buyerRef.current?.focus();
       return;
     }
-    const sellerLabel = `${sellerNumber} ${sellerDisplayName}`;
-    const buyerLabel = `${buyerNumber} ${buyerDisplayName}`;
+    // 売主・買主の表示用ラベル（枝番付き）。memberNumberは parse 結果を優先
+    const sellerParsed = parseMemberNumberInput(sellerNumber);
+    const buyerParsed = parseMemberNumberInput(buyerNumber);
+    const sellerLabel = `${formatMemberNumber(sellerParsed.number, sellerSuffix)} ${sellerDisplayName}`;
+    const buyerLabel = `${formatMemberNumber(buyerParsed.number, buyerSuffix)} ${buyerDisplayName}`;
     onAddRow({
       sellerMemberId,
+      sellerSuffix,
       sellerName: sellerLabel,
       buyerMemberId,
+      buyerSuffix,
       buyerName: buyerLabel,
       itemName: itemName.trim(),
       unitPrice: Number(unitPrice) || 0,
@@ -527,7 +338,7 @@ function QuickEntryForm({
       transactionType,
     });
     resetForm();
-  }, [sellerMemberId, buyerMemberId, itemName, sameNumberError, sellerNumber, sellerDisplayName, buyerNumber, buyerDisplayName, unitPrice, quantity, transactionType, onAddRow, resetForm]);
+  }, [sellerMemberId, sellerSuffix, buyerMemberId, buyerSuffix, itemName, sameNumberError, sellerNumber, sellerDisplayName, buyerNumber, buyerDisplayName, unitPrice, quantity, transactionType, onAddRow, resetForm]);
 
   // Safe focus helper
   const safeFocus = useCallback((ref: React.RefObject<HTMLElement | null>) => {
@@ -611,32 +422,42 @@ function QuickEntryForm({
           >
             {transactionType === "normal" ? "通常" : "返品"}
           </button>
-          {/* 売主番号 */}
+          {/* 売主番号（枝番A/B/C対応: 例 1, 1-A, 98-B） */}
           <input
             ref={sellerRef}
-            type="number"
-            inputMode="numeric"
+            type="text"
+            inputMode="text"
             value={sellerNumber}
             className={`${inputClass} text-center font-mono ${sameNumberError ? "border-destructive ring-destructive" : ""}`}
-            placeholder="番号"
-            min={1}
+            placeholder="番号 / 1-A"
+            autoComplete="off"
             onChange={(e) => {
-              const v = e.target.value.replace(/[^0-9]/g, "");
+              // 数字 + ハイフン + A/B/C のみ許容
+              const v = e.target.value.replace(/[^0-9A-Za-zー\-‐－]/g, "").toUpperCase();
               setSellerNumber(v);
               resolveSeller(v);
             }}
             onBlur={() => resolveSeller(sellerNumber)}
             onKeyDown={(e) => handleDoubleEnter(e, itemNameRef)}
           />
-          {/* 商品名（オートコンプリート付き） */}
-          <ItemNameAutocomplete
-            inputRef={itemNameRef}
+          {/* 商品名 */}
+          <input
+            ref={itemNameRef}
+            type="text"
+            inputMode="text"
             value={itemName}
-            onChange={setItemName}
             className={inputClass}
             placeholder="商品名"
-            onCompositionChange={(composing) => { formComposingRef.current = composing; }}
+            style={{ imeMode: "active" } as React.CSSProperties}
+            autoComplete="off"
+            onCompositionStart={() => { formComposingRef.current = true; }}
+            onCompositionEnd={(e) => {
+              formComposingRef.current = false;
+              setItemName((e.target as HTMLInputElement).value);
+            }}
+            onChange={(e) => setItemName(e.target.value)}
             onKeyDown={(e) => {
+              if (formComposingRef.current || e.nativeEvent.isComposing || (e.nativeEvent as any).keyCode === 229) return;
               if (justNavigatedRef.current && e.key === "Enter") { e.preventDefault(); return; }
               handleDoubleEnter(e, unitPriceRef);
             }}
@@ -655,17 +476,17 @@ function QuickEntryForm({
               handleDoubleEnter(e, buyerRef);
             }}
           />
-          {/* 買主番号 */}
+          {/* 買主番号（枝番A/B/C対応: 例 1, 1-A, 98-B） */}
           <input
             ref={buyerRef}
-            type="number"
-            inputMode="numeric"
+            type="text"
+            inputMode="text"
             value={buyerNumber}
             className={`${inputClass} text-center font-mono ${sameNumberError ? "border-destructive ring-destructive" : ""}`}
-            placeholder="番号"
-            min={1}
+            placeholder="番号 / 1-A"
+            autoComplete="off"
             onChange={(e) => {
-              const v = e.target.value.replace(/[^0-9]/g, "");
+              const v = e.target.value.replace(/[^0-9A-Za-zー\-‐－]/g, "").toUpperCase();
               setBuyerNumber(v);
               resolveBuyer(v);
             }}
@@ -718,15 +539,6 @@ export default function Transactions() {
   const [rows, setRows] = useState<GridRow[]>([]);
   const [activeCell, setActiveCell] = useState<{ row: number; col: number } | null>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
-  // グリッドセル商品名用の安定したref（インラインref生成を排除して再マウントを防止）
-  const gridItemNameRef = useRef<HTMLInputElement>(null);
-  const gridItemNameFocusedRef = useRef(false);
-
-  // activeCellが変わったら商品名refのfocusフラグをリセット（次のアクティブ化で再度focusするため）
-  useEffect(() => {
-    gridItemNameFocusedRef.current = false;
-  }, [activeCell?.row, activeCell?.col]);
-
   // 検索窓
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -774,26 +586,40 @@ export default function Transactions() {
   // アクティブ編集中のセルがある場合は、編集中の行を保護
   useEffect(() => {
     if (!selectedEventId) return;
-    const txKey = JSON.stringify(transactions.map((t) => `${t.id}:${t.version}:${t.itemName}:${t.unitPrice}:${t.quantity}:${t.sellerMemberId}:${t.buyerMemberId}:${t.notes}:${t.transactionType}`));
+    const txKey = JSON.stringify(transactions.map((t: any) => `${t.id}:${t.version}:${t.itemName}:${t.unitPrice}:${t.quantity}:${t.sellerMemberId}:${t.sellerSuffix ?? ""}:${t.buyerMemberId}:${t.buyerSuffix ?? ""}:${t.notes}:${t.transactionType}`));
     if (txKey === txDataRef.current && rows.length > 0) return;
     txDataRef.current = txKey;
     const mMap = memberMapRef.current;
-    const loaded: GridRow[] = transactions.map((t, i) => ({
-      id: t.id,
-      rowNumber: t.rowNumber ?? i + 1,
-      sellerMemberId: t.sellerMemberId,
-      sellerName: mMap.get(t.sellerMemberId) ?? String(t.sellerMemberId),
-      buyerMemberId: t.buyerMemberId,
-      buyerName: mMap.get(t.buyerMemberId) ?? String(t.buyerMemberId),
-      itemName: t.itemName,
-      unitPrice: t.unitPrice,
-      quantity: t.quantity,
-      totalPrice: t.totalPrice,
-      transactionType: t.transactionType,
-      notes: t.notes ?? "",
-      version: t.version,
-      isNew: false,
-    }));
+    const loaded: GridRow[] = transactions.map((t: any, i: number) => {
+      const sellerSuffix = (t.sellerSuffix ?? null) as MemberNumberSuffix;
+      const buyerSuffix = (t.buyerSuffix ?? null) as MemberNumberSuffix;
+      const sellerNameBase = mMap.get(t.sellerMemberId);
+      const buyerNameBase = mMap.get(t.buyerMemberId);
+      // mMap の値は "番号 名前" 形式。枝番がある場合は番号部分に枝番を差し込む
+      const withSuffix = (label: string | undefined, memberId: number, suffix: MemberNumberSuffix) => {
+        if (!label) return formatMemberNumber(memberId, suffix);
+        if (!suffix) return label;
+        return label.replace(/^(\d+)\s/, (_, n) => `${n}-${suffix} `);
+      };
+      return {
+        id: t.id,
+        rowNumber: t.rowNumber ?? i + 1,
+        sellerMemberId: t.sellerMemberId,
+        sellerSuffix,
+        sellerName: withSuffix(sellerNameBase, t.sellerMemberId, sellerSuffix),
+        buyerMemberId: t.buyerMemberId,
+        buyerSuffix,
+        buyerName: withSuffix(buyerNameBase, t.buyerMemberId, buyerSuffix),
+        itemName: t.itemName,
+        unitPrice: t.unitPrice,
+        quantity: t.quantity,
+        totalPrice: t.totalPrice,
+        transactionType: t.transactionType,
+        notes: t.notes ?? "",
+        version: t.version,
+        isNew: false,
+      };
+    });
 
     // 未保存の新規行を保持
     const existingNewRows = rows.filter((r) => r.isNew && (r.sellerMemberId > 0 || r.itemName.trim() !== ""));
@@ -900,7 +726,9 @@ export default function Transactions() {
           id: row.id,
           version: row.version,
           sellerMemberId: row.sellerMemberId || undefined,
+          sellerSuffix: row.sellerSuffix ?? null,
           buyerMemberId: row.buyerMemberId || undefined,
+          buyerSuffix: row.buyerSuffix ?? null,
           itemName: row.itemName || undefined,
           unitPrice: row.unitPrice,
           quantity: row.quantity,
@@ -918,8 +746,8 @@ export default function Transactions() {
     if (isSavingRef.current) return;
     const validNewRows = rows.filter((r) => {
       if (!r.isNew || r.sellerMemberId <= 0 || r.buyerMemberId <= 0 || r.itemName.trim() === "") return false;
-      // 同一行の重複保存チェック（売主+買主+商品名+単価+数量+行番号をキーに）
-      const rowKey = `${r.rowNumber}-${r.sellerMemberId}-${r.buyerMemberId}-${r.itemName}-${r.unitPrice}-${r.quantity}`;
+      // 同一行の重複保存チェック（売主+枝番+買主+枝番+商品名+単価+数量+行番号をキーに）
+      const rowKey = `${r.rowNumber}-${r.sellerMemberId}${r.sellerSuffix ?? ""}-${r.buyerMemberId}${r.buyerSuffix ?? ""}-${r.itemName}-${r.unitPrice}-${r.quantity}`;
       return !savedRowKeysRef.current.has(rowKey);
     });
     if (validNewRows.length === 0) return;
@@ -927,7 +755,7 @@ export default function Transactions() {
     // 保存前にキーを登録して二重実行を防止
     isSavingRef.current = true;
     const keys = validNewRows.map((r) =>
-      `${r.rowNumber}-${r.sellerMemberId}-${r.buyerMemberId}-${r.itemName}-${r.unitPrice}-${r.quantity}`
+      `${r.rowNumber}-${r.sellerMemberId}${r.sellerSuffix ?? ""}-${r.buyerMemberId}${r.buyerSuffix ?? ""}-${r.itemName}-${r.unitPrice}-${r.quantity}`
     );
     keys.forEach((k) => savedRowKeysRef.current.add(k));
 
@@ -937,7 +765,9 @@ export default function Transactions() {
         rows: validNewRows.map((r) => ({
           rowNumber: r.rowNumber,
           sellerMemberId: r.sellerMemberId,
+          sellerSuffix: r.sellerSuffix ?? null,
           buyerMemberId: r.buyerMemberId,
+          buyerSuffix: r.buyerSuffix ?? null,
           itemName: r.itemName,
           unitPrice: r.unitPrice,
           quantity: r.quantity,
@@ -1116,12 +946,15 @@ export default function Transactions() {
       return <span className="px-2">{value}</span>;
     }
 
-    // Member number-only fields (seller/buyer)
+    // Member number-only fields (seller/buyer) — 枝番 A/B/C 対応 (例: 1, 1-A)
     if (col.type === "member") {
-      // Extract member number from stored value (e.g., "123 山田太郎" -> "123")
-      const memberNum = col.key === "sellerName" ? row.sellerMemberId : row.buyerMemberId;
-      const memberInfo = members.find((m) => m.id === memberNum);
-      const displayNum = memberInfo ? String(memberInfo.memberNumber) : (memberNum > 0 ? String(memberNum) : "");
+      const isSeller = col.key === "sellerName";
+      const memberId = isSeller ? row.sellerMemberId : row.buyerMemberId;
+      const memberSuffix = isSeller ? row.sellerSuffix : row.buyerSuffix;
+      const memberInfo = members.find((m) => m.id === memberId);
+      const displayNum = memberInfo
+        ? formatMemberNumber(memberInfo.memberNumber, memberSuffix)
+        : (memberId > 0 ? formatMemberNumber(memberId, memberSuffix) : "");
       const displayName = memberInfo?.displayName || "";
 
       if (!isActive) {
@@ -1135,24 +968,35 @@ export default function Transactions() {
       return (
         <div className="w-full">
           <input
-            type="number"
-            inputMode="numeric"
+            type="text"
+            inputMode="text"
             defaultValue={displayNum}
             className="w-full h-7 px-2 py-0.5 text-sm font-mono text-center border-0 bg-blue-50/40 focus:outline-none rounded"
-            placeholder="番号"
-            min={1}
+            placeholder="番号 / 1-A"
+            autoComplete="off"
             autoFocus
             onChange={(e) => {
-              const num = parseInt(e.target.value);
-              const m = members.find((mem) => mem.memberNumber === num);
+              const v = e.target.value.replace(/[^0-9A-Za-zー\-‐－]/g, "").toUpperCase();
+              if (v !== e.target.value) e.target.value = v;
+              const { number, suffix } = parseMemberNumberInput(v);
+              const m = !isNaN(number) ? members.find((mem) => mem.memberNumber === number) : null;
               if (m) {
-                const label = `${m.memberNumber} ${m.displayName}`;
+                const label = `${formatMemberNumber(m.memberNumber, suffix)} ${m.displayName}`;
                 updateRow(rowIdx, col.key as ColumnKey, label, m.id);
-                // Check same seller/buyer
-                if (col.key === "buyerName" && row.sellerMemberId === m.id) {
-                  toast.error("売主と買主が同じ番号です");
-                } else if (col.key === "sellerName" && row.buyerMemberId === m.id) {
-                  toast.error("売主と買主が同じ番号です");
+                // 行に suffix を反映
+                setRows((prev) => {
+                  const updated = [...prev];
+                  const r = { ...updated[rowIdx] };
+                  if (isSeller) r.sellerSuffix = suffix; else r.buyerSuffix = suffix;
+                  r._dirty = true;
+                  updated[rowIdx] = r;
+                  return updated;
+                });
+                // 売主・買主が同番号 + 同枝番のときだけエラー
+                const otherId = isSeller ? row.buyerMemberId : row.sellerMemberId;
+                const otherSuffix = isSeller ? row.buyerSuffix : row.sellerSuffix;
+                if (m.id === otherId && (suffix ?? null) === (otherSuffix ?? null)) {
+                  toast.error("売主と買主が同じ伝票（同番号・同枝番）です");
                 }
               }
             }}
@@ -1181,33 +1025,6 @@ export default function Transactions() {
     }
 
     // Text / Number input - active state
-    // 商品名セルはItemNameAutocompleteを使用（オートコンプリート+上下キー選択対応）
-    // 安定したrefを使用し、マウント時に1回だけfocusを実行
-    if (col.key === "itemName") {
-      // アクティブになったらfocusフラグをリセット（次回のアクティブ化で再度focusするため）
-      if (!gridItemNameFocusedRef.current) {
-        gridItemNameFocusedRef.current = true;
-        setTimeout(() => {
-          gridItemNameRef.current?.focus({ preventScroll: true });
-        }, 10);
-      }
-      return (
-        <ItemNameAutocomplete
-          inputRef={gridItemNameRef}
-          value={value ?? ""}
-          onChange={(val) => updateRow(rowIdx, col.key as ColumnKey, val)}
-          className="w-full h-8 px-2 py-1 text-sm border-0 bg-blue-50/40 focus:outline-none rounded"
-          style={{ imeMode: "active" } as React.CSSProperties}
-          placeholder=""
-          onKeyDown={(e) => {
-            // 上下キーは候補リストが処理するので、それ以外のキーのみグリッドナビゲーションに渡す
-            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") {
-              handleKeyNavigation(e, rowIdx, colIdx);
-            }
-          }}
-        />
-      );
-    }
     return (
       <CellInput
         type={col.type === "number" ? "number" : "text"}
@@ -1417,7 +1234,9 @@ export default function Transactions() {
                     rows: [{
                       rowNumber: rows.length > 0 ? rows[rows.length - 1].rowNumber + 1 : 1,
                       sellerMemberId: entry.sellerMemberId,
+                      sellerSuffix: entry.sellerSuffix ?? null,
                       buyerMemberId: entry.buyerMemberId,
+                      buyerSuffix: entry.buyerSuffix ?? null,
                       itemName: entry.itemName,
                       unitPrice: entry.unitPrice,
                       quantity: entry.quantity,
