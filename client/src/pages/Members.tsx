@@ -43,9 +43,12 @@ import { toast } from "sonner";
 type MemberForm = {
   memberNumber: number;
   displayName: string;
+  displayNameKana: string;
   tradeName: string;
+  tradeNameKana: string;
   representative: string;
   invoiceNumber: string;
+  antiquePermitPrefecture: string;
   antiquePermitNumber: string;
 
   phone: string;
@@ -63,9 +66,12 @@ type MemberForm = {
 const defaultForm: MemberForm = {
   memberNumber: 0,
   displayName: "",
+  displayNameKana: "",
   tradeName: "",
+  tradeNameKana: "",
   representative: "",
   invoiceNumber: "",
+  antiquePermitPrefecture: "",
   antiquePermitNumber: "",
 
   phone: "",
@@ -79,6 +85,14 @@ const defaultForm: MemberForm = {
   sellCommissionRate: "10.00",
   buyCommissionRate: "5.00",
 };
+
+// 古物商番号を「○○県第XXXX号」形式に整形
+function formatAntiquePermit(m: { antiquePermitPrefecture?: string | null; antiquePermitNumber?: string | null }): string {
+  const pref = m.antiquePermitPrefecture?.trim();
+  const num = m.antiquePermitNumber?.trim();
+  if (!pref && !num) return "-";
+  return `${pref ?? ""}第${num ?? ""}号`;
+}
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
@@ -94,15 +108,17 @@ export default function Members() {
   const [newPassword, setNewPassword] = useState("");
   const [issuedTemporaryPassword, setIssuedTemporaryPassword] = useState("");
   const [showVacant, setShowVacant] = useState(false);
+  const [showExpiredOnly, setShowExpiredOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [gridPage, setGridPage] = useState(1);
 
   const utils = trpc.useUtils();
-  const { data: members = [], isLoading } = trpc.members.list.useQuery({ activeOnly: true }, { refetchInterval: 10000 });
+  const { data: members = [], isLoading } = trpc.members.listWithActivity.useQuery({ activeOnly: true }, { refetchInterval: 10000 });
   const createMutation = trpc.members.create.useMutation({
     onSuccess: () => {
       utils.members.list.invalidate();
+      utils.members.listWithActivity.invalidate();
       setDialogOpen(false);
       toast.success("会員を登録しました");
     },
@@ -111,6 +127,7 @@ export default function Members() {
   const updateMutation = trpc.members.update.useMutation({
     onSuccess: () => {
       utils.members.list.invalidate();
+      utils.members.listWithActivity.invalidate();
       setDialogOpen(false);
       toast.success("会員情報を更新しました");
     },
@@ -119,6 +136,7 @@ export default function Members() {
   const deleteMutation = trpc.members.delete.useMutation({
     onSuccess: () => {
       utils.members.list.invalidate();
+      utils.members.listWithActivity.invalidate();
       setDeleteId(null);
       toast.success("会員を削除しました");
     },
@@ -168,12 +186,18 @@ export default function Members() {
   };
 
   // Filtered members
+  const expiredCount = useMemo(() => members.filter((m: any) => m.isExpired).length, [members]);
   const filtered = useMemo(() => {
     return members.filter(
       (m) =>
+        (showExpiredOnly ? (m as any).isExpired : true) &&
+        (
         m.displayName.includes(search) ||
         m.tradeName?.includes(search) ||
-        String(m.memberNumber).includes(search)
+        (m as any).tradeNameKana?.includes(search) ||
+        (m as any).displayNameKana?.includes(search) ||
+        (m as any).antiquePermitNumber?.includes(search) ||
+        String(m.memberNumber).includes(search))
     );
   }, [members, search]);
 
@@ -208,9 +232,12 @@ export default function Members() {
     setForm({
       memberNumber: m.memberNumber,
       displayName: m.displayName,
+      displayNameKana: (m as any).displayNameKana ?? "",
       tradeName: m.tradeName ?? "",
+      tradeNameKana: (m as any).tradeNameKana ?? "",
       representative: m.representative ?? "",
       invoiceNumber: m.invoiceNumber ?? "",
+      antiquePermitPrefecture: (m as any).antiquePermitPrefecture ?? "",
       antiquePermitNumber: (m as any).antiquePermitNumber ?? "",
 
       phone: m.phone ?? "",
@@ -492,6 +519,14 @@ export default function Members() {
               onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
               className="max-w-sm"
             />
+            <Button
+              variant={showExpiredOnly ? "destructive" : "outline"}
+              size="sm"
+              onClick={() => { setShowExpiredOnly((v) => !v); setCurrentPage(1); }}
+              title="1年以上取引がない会員のみ表示"
+            >
+              失効会員のみ表示（{expiredCount}名）
+            </Button>
             <span className="text-sm text-muted-foreground ml-auto">
               {filtered.length}件表示
             </span>
@@ -503,48 +538,48 @@ export default function Members() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-20">番号</TableHead>
-                  <TableHead>表示名</TableHead>
-                  <TableHead>屋号</TableHead>
-                  <TableHead>古物番号</TableHead>
-
-                  <TableHead>電話</TableHead>
-                  <TableHead className="w-20">課税</TableHead>
-                  <TableHead>歩合</TableHead>
-                  <TableHead className="w-24 text-right">操作</TableHead>
+                  <TableHead>屋号（表示名）</TableHead>
+                  <TableHead>名前</TableHead>
+                  <TableHead>古物商番号</TableHead>
+                  <TableHead className="w-32 text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                       読み込み中...
                     </TableCell>
                   </TableRow>
                 ) : paginatedMembers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                       {search ? "該当する会員が見つかりません" : "会員が登録されていません"}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedMembers.map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell className="font-mono">{m.memberNumber}</TableCell>
-                      <TableCell className="font-medium">{m.displayName}</TableCell>
-                      <TableCell>{m.tradeName ?? "-"}</TableCell>
-                      <TableCell className="font-mono text-xs">{(m as any).antiquePermitNumber ?? "-"}</TableCell>
-
-                      <TableCell>{m.phone ?? "-"}</TableCell>
-                      <TableCell>{m.isTaxable ? "課税" : "免税"}</TableCell>
-                      <TableCell>
-                        {(m as any).useCustomCommission ? (
-                          <span className="text-xs font-medium text-amber-600">
-                            売{(m as any).sellCommissionRate}% / 買{(m as any).buyCommissionRate}%
+                  paginatedMembers.map((m) => {
+                    const expired = (m as any).isExpired;
+                    const lastAt = (m as any).lastActivityAt as number | null;
+                    const lastLabel = lastAt
+                      ? new Date(lastAt * 1000).toLocaleDateString("ja-JP")
+                      : "取引履歴なし";
+                    return (
+                    <TableRow key={m.id} className={expired ? "bg-red-50 hover:bg-red-100" : undefined}>
+                      <TableCell className="font-mono">
+                        {m.memberNumber}
+                        {expired && (
+                          <span
+                            className="ml-2 inline-block rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white align-middle"
+                            title={`最終取引: ${lastLabel}（1年以上経過）`}
+                          >
+                            失効
                           </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">標準</span>
                         )}
                       </TableCell>
+                      <TableCell className={`font-medium ${expired ? "text-red-700" : ""}`}>{m.tradeName || m.displayName}</TableCell>
+                      <TableCell className={expired ? "text-red-700" : ""}>{m.representative ?? "-"}</TableCell>
+                      <TableCell className="font-mono text-xs">{formatAntiquePermit(m as any)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
                           <Button variant="ghost" size="icon" onClick={() => openEdit(m)} title="編集">
@@ -556,13 +591,19 @@ export default function Members() {
                           <Button variant="ghost" size="icon" onClick={() => openPasswordDialog(m)} title="パスワード設定">
                             <Key className="h-4 w-4 text-amber-600" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => setDeleteId(m.id)} title="削除">
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleteId(m.id)}
+                            title={expired ? `削除提案：最終取引 ${lastLabel}（1年以上）。削除しますか？` : "削除"}
+                          >
+                            <Trash2 className={`h-4 w-4 ${expired ? "text-red-600" : "text-destructive"}`} />
                           </Button>
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -658,17 +699,26 @@ export default function Members() {
               </p>
             </div>
             <div className="space-y-2">
-              <Label>表示名 *</Label>
+              <Label>フリガナ（屋号）</Label>
               <Input
-                value={form.displayName}
-                onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+                value={form.tradeNameKana}
+                onChange={(e) => setForm({ ...form, tradeNameKana: e.target.value })}
+                placeholder="例: ヤマダショウテン"
               />
             </div>
             <div className="space-y-2">
-              <Label>屋号</Label>
+              <Label>屋号（表示名） *</Label>
               <Input
-                value={form.tradeName}
-                onChange={(e) => setForm({ ...form, tradeName: e.target.value })}
+                value={form.displayName}
+                onChange={(e) => setForm({ ...form, displayName: e.target.value, tradeName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>フリガナ（代表者名）</Label>
+              <Input
+                value={form.displayNameKana}
+                onChange={(e) => setForm({ ...form, displayNameKana: e.target.value })}
+                placeholder="例: ヤマダタロウ"
               />
             </div>
             <div className="space-y-2">
@@ -687,12 +737,23 @@ export default function Members() {
               />
             </div>
             <div className="space-y-2">
-              <Label>古物番号</Label>
+              <Label>古物商 都道府県</Label>
+              <Input
+                value={form.antiquePermitPrefecture}
+                onChange={(e) => setForm({ ...form, antiquePermitPrefecture: e.target.value })}
+                placeholder="例: 愛知県"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>古物商番号</Label>
               <Input
                 value={form.antiquePermitNumber}
                 onChange={(e) => setForm({ ...form, antiquePermitNumber: e.target.value })}
-                placeholder="古物商許可証番号"
+                placeholder="例: 541234567890"
               />
+              <p className="text-xs text-muted-foreground">
+                表示例: {formatAntiquePermit(form)}
+              </p>
             </div>
             <div className="space-y-2">
               <Label>電話番号</Label>
@@ -809,9 +870,23 @@ export default function Members() {
       <AlertDialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>会員を削除しますか？</AlertDialogTitle>
+            <AlertDialogTitle>
+              {(() => {
+                const target: any = members.find((mm: any) => mm.id === deleteId);
+                return target?.isExpired ? "失効会員の削除提案" : "会員を削除しますか？";
+              })()}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              この操作により会員は非アクティブになります。取引データは保持されます。
+              {(() => {
+                const target: any = members.find((mm: any) => mm.id === deleteId);
+                if (target?.isExpired) {
+                  const lastLabel = target.lastActivityAt
+                    ? new Date(target.lastActivityAt * 1000).toLocaleDateString("ja-JP")
+                    : "取引履歴なし";
+                  return `${target.memberNumber} ${target.tradeName || target.displayName} は最終取引が ${lastLabel} で1年以上経過しているため、会員権が失効しています。削除しますか？（取引データは保持されます。判断は管理者にお任せします）`;
+                }
+                return "この操作により会員は非アクティブになります。取引データは保持されます。";
+              })()}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

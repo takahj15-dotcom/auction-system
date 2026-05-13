@@ -30,6 +30,9 @@ export const members = sqliteTable("members", {
   representative: text("representative"),
   invoiceNumber: text("invoiceNumber"),
   antiquePermitNumber: text("antiquePermitNumber"),
+  antiquePermitPrefecture: text("antiquePermitPrefecture"),
+  tradeNameKana: text("tradeNameKana"),
+  displayNameKana: text("displayNameKana"),
   // decimalはSQLiteではtextとして保持（既存コードはparseFloatしているので互換性を維持）
   sellCommissionRate: text("sellCommissionRate").notNull().default("10.00"),
   buyCommissionRate: text("buyCommissionRate").notNull().default("5.00"),
@@ -95,7 +98,9 @@ export const transactions = sqliteTable("transactions", {
   eventId: integer("eventId").notNull(),
   rowNumber: integer("rowNumber"),
   sellerMemberId: integer("sellerMemberId").notNull(),
+  sellerSuffix: text("sellerSuffix"), // 'A' | 'B' | 'C' | null（伝票分割用）
   buyerMemberId: integer("buyerMemberId").notNull(),
+  buyerSuffix: text("buyerSuffix"), // 'A' | 'B' | 'C' | null（伝票分割用）
   itemName: text("itemName").notNull(),
   unitPrice: integer("unitPrice").notNull().default(0),
   quantity: integer("quantity").notNull().default(1),
@@ -116,6 +121,7 @@ export const settlements = sqliteTable("settlements", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   eventId: integer("eventId").notNull(),
   memberId: integer("memberId").notNull(),
+  suffix: text("suffix"), // 'A' | 'B' | 'C' | null（伝票分割用）
   salesTotal: integer("salesTotal").notNull().default(0),
   salesCommission: integer("salesCommission").notNull().default(0),
   purchaseTotal: integer("purchaseTotal").notNull().default(0),

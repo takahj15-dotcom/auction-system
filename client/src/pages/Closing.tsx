@@ -537,7 +537,10 @@ export default function Closing() {
                     <TableBody>
                       {settlements.map((s: any) => (
                         <TableRow key={s.id} className={s.isSettled ? "bg-green-50/50" : ""}>
-                          <TableCell className="font-mono">{s.member?.memberNumber ?? "-"}</TableCell>
+                          <TableCell className="font-mono">
+                            {s.member?.memberNumber ?? "-"}
+                            {s.suffix && <span className="ml-0.5 text-blue-600 font-bold">-{s.suffix}</span>}
+                          </TableCell>
                           <TableCell>{s.member?.displayName ?? "-"}</TableCell>
                           <TableCell>
                             {s.settlementType === "interim" ? (
@@ -775,11 +778,26 @@ export default function Closing() {
           }
           main {
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 6mm 8mm !important;
           }
           @page {
-            size: A4;
-            margin: 10mm;
+            size: A4 portrait;
+            /* 上部は2枚目以降の1行目が切れないよう1行分多めに確保 */
+            margin: 28mm 18mm 22mm 18mm;
+          }
+          /* 行（tr）と表ヘッダーはページをまたいで切れないように。
+             tbody 全体は avoid しない（途中改行を許可しないと、長い表で
+             1ページ目の下半分が大きく空白になるため） */
+          table tr, table thead {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          table tbody {
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+          }
+          table thead {
+            display: table-header-group !important;
           }
         }
       `}</style>

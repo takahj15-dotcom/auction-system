@@ -89,6 +89,111 @@ export async function listMembers(activeOnly = true) {
   return db.select().from(members).where(conditions).orderBy(members.memberNumber);
 }
 
+/**
+ * 全会員と最終活動日時（売り/買い/参加受付）をまとめて返す。
+ * lastActivityAt は unix秒。何も活動がない場合は null。
+ */
+export async function listMembersWithActivity(activeOnly = true) {
+  const db = await getDb();
+  if (!db) return [];
+  const baseList = await listMembers(activeOnly);
+  if (baseList.length === 0) return [];
+
+  // 売買: sellerまたはbuyerとして参加した取引のうち最大createdAt（削除済み除外）
+  const sellRows = await db
+    .select({
+      memberId: transactions.sellerMemberId,
+      lastAt: sql<number>`MAX(${transactions.createdAt})`,
+    })
+    .from(transactions)
+    .where(eq(transactions.isDeleted, false))
+    .groupBy(transactions.sellerMemberId);
+
+  const buyRows = await db
+    .select({
+      memberId: transactions.buyerMemberId,
+      lastAt: sql<number>`MAX(${transactions.createdAt})`,
+    })
+    .from(transactions)
+    .where(eq(transactions.isDeleted, false))
+    .groupBy(transactions.buyerMemberId);
+
+  // 参加受付: isPresent=true のレコード。checkedInAt があればそれ、無ければ createdAt
+  const attRows = await db
+    .select({
+      memberId: eventAttendance.memberId,
+      lastAt: sql<number>`MAX(COALESCE(${eventAttendance.checkedInAt}, ${eventAttendance.createdAt}))`,
+    })
+    .from(eventAttendance)
+    .where(eq(eventAttendance.isPresent, true))
+    .groupBy(eventAttendance.memberId);
+
+  const lastByMember = new Map<number, number>();
+  const merge = (rows: { memberId: number; lastAt: number | null }[]) => {
+    for (const r of rows) {
+      if (r.lastAt == null) continue;
+      const ts = Number(r.lastAt);
+      const prev = lastByMember.get(r.memberId) ?? 0;
+      if (ts > prev) lastByMember.set(r.memberId, ts);
+    }
+  };
+  merge(sellRows as any);
+  merge(buyRows as any);
+  merge(attRows as any);
+
+  const oneYearSec = 365 * 24 * 60 * 60;
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  return baseList.map((m) => {
+    const lastActivityAt = lastByMember.get(m.id) ?? null;
+    const isExpired =
+      lastActivityAt == null
+        ? // 活動が一度も無い会員は登録から1年経過していたら失効扱い
+          nowSec - (m.createdAt instanceof Date ? Math.floor(m.createdAt.getTime() / 1000) : Number(m.createdAt)) > oneYearSec
+        : nowSec - lastActivityAt > oneYearSec;
+    return { ...m, lastActivityAt, isExpired };
+  });
+}
+
+/**
+ * 単一会員の最終活動日時と失効判定。ポータル用。
+ */
+export async function getMemberActivityStatus(memberId: number) {
+  const db = await getDb();
+  if (!db) return { lastActivityAt: null, isExpired: false };
+
+  const sellRow = await db
+    .select({ lastAt: sql<number>`MAX(${transactions.createdAt})` })
+    .from(transactions)
+    .where(and(eq(transactions.sellerMemberId, memberId), eq(transactions.isDeleted, false)));
+  const buyRow = await db
+    .select({ lastAt: sql<number>`MAX(${transactions.createdAt})` })
+    .from(transactions)
+    .where(and(eq(transactions.buyerMemberId, memberId), eq(transactions.isDeleted, false)));
+  const attRow = await db
+    .select({ lastAt: sql<number>`MAX(COALESCE(${eventAttendance.checkedInAt}, ${eventAttendance.createdAt}))` })
+    .from(eventAttendance)
+    .where(and(eq(eventAttendance.memberId, memberId), eq(eventAttendance.isPresent, true)));
+
+  const candidates = [sellRow[0]?.lastAt, buyRow[0]?.lastAt, attRow[0]?.lastAt]
+    .map((v) => (v == null ? null : Number(v)))
+    .filter((v): v is number => typeof v === "number");
+  const lastActivityAt = candidates.length > 0 ? Math.max(...candidates) : null;
+  const oneYearSec = 365 * 24 * 60 * 60;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const member = await getMemberById(memberId);
+  const memberCreatedSec = member
+    ? member.createdAt instanceof Date
+      ? Math.floor(member.createdAt.getTime() / 1000)
+      : Number(member.createdAt)
+    : nowSec;
+  const isExpired =
+    lastActivityAt == null
+      ? nowSec - memberCreatedSec > oneYearSec
+      : nowSec - lastActivityAt > oneYearSec;
+  return { lastActivityAt, isExpired };
+}
+
 export async function getMemberById(id: number) {
   const db = await getDb();
   if (!db) return undefined;

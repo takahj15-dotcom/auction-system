@@ -215,7 +215,7 @@ export default function PortalSettlementDetail() {
         </div>
 
         {/* Settlement Sheet */}
-        <div ref={printRef} style={{
+        <div ref={printRef} data-portal-sheet style={{
           background: "#fff",
           padding: "20px 16px",
           borderRadius: 12,
@@ -225,9 +225,51 @@ export default function PortalSettlementDetail() {
         }}>
           <style>{`
             @media print {
-              body { margin: 0; padding: 0; }
+              /* 上部は2枚目以降の1行目が切れないよう1行分多めに確保 */
+              @page { size: A4 portrait; margin: 28mm 18mm 22mm 18mm; }
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
               .no-print { display: none !important; }
-              @page { size: A4; margin: 10mm; }
+              /* 印刷時はシートを A4 内に収める */
+              [data-portal-sheet] {
+                background: #fff !important;
+                padding: 4mm !important;
+                margin: 0 auto !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                max-width: 174mm !important;
+                width: 174mm !important;
+                font-size: 10.5px !important;
+                box-sizing: border-box !important;
+              }
+              [data-portal-sheet] table {
+                width: 100% !important;
+                table-layout: fixed !important;
+                border-collapse: collapse !important;
+              }
+              [data-portal-sheet] table th,
+              [data-portal-sheet] table td {
+                word-break: break-all;
+                overflow-wrap: anywhere;
+              }
+              /* 行（tr）と表ヘッダーはページをまたいで切れないように。
+                 tbody 全体は avoid しない（長い表の途中改行を許可するため） */
+              [data-portal-sheet] table tr,
+              [data-portal-sheet] table thead {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+              }
+              [data-portal-sheet] table tbody {
+                page-break-inside: auto !important;
+                break-inside: auto !important;
+              }
+              [data-portal-sheet] table thead {
+                display: table-header-group !important;
+              }
             }
           `}</style>
 

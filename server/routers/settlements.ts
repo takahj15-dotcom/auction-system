@@ -66,13 +66,31 @@ async function getMemberCommissionRates(eventId: number, memberId: number, event
 }
 
 /**
- * Calculate settlement data for a single member
+ * Calculate settlement data for a single member (with optional suffix for slip-split)
+ *
+ * suffix=null   → 取引のうち sellerSuffix/buyerSuffix が null のものを集計
+ * suffix='A/B/C' → 該当 suffix の取引のみ集計
+ *
+ * options.includeFee=false の場合、参加費を 0 にして「他の伝票で計上済み」扱いにする。
+ * （参加費は会員1人あたり1回のみ計上するため）
  */
-async function calculateMemberSettlement(eventId: number, memberId: number, event: any, txns: any[]) {
+async function calculateMemberSettlement(
+  eventId: number,
+  memberId: number,
+  event: any,
+  txns: any[],
+  suffix: string | null = null,
+  options: { includeFee?: boolean } = { includeFee: true },
+) {
   const member = await db.getMemberById(memberId);
   if (!member) return null;
 
   const { sellRate, buyRate } = await getMemberCommissionRates(eventId, memberId, event);
+
+  const matchSeller = (t: any) =>
+    t.sellerMemberId === memberId && ((t.sellerSuffix ?? null) === (suffix ?? null));
+  const matchBuyer = (t: any) =>
+    t.buyerMemberId === memberId && ((t.buyerSuffix ?? null) === (suffix ?? null));
 
   // 通常取引と返品取引を分離
   let salesTotal = 0;
@@ -83,19 +101,19 @@ async function calculateMemberSettlement(eventId: number, memberId: number, even
   txns.forEach(t => {
     if (t.transactionType === "return") {
       // 返品取引: 通常合計には含めず、別途計算
-      if (t.sellerMemberId === memberId) {
+      if (matchSeller(t)) {
         // 売返品: 金額のみ（手数料・消費税なし）
         salesReturnTotal += t.totalPrice;
       }
-      if (t.buyerMemberId === memberId) {
+      if (matchBuyer(t)) {
         // 買返品: 金額 + 手数料(税込) = 金額 + Math.floor(金額 × 買歩合率 × 1.1)
         const returnCommission = Math.floor(t.totalPrice * buyRate);
         const returnCommissionTax = Math.floor(returnCommission * 0.1);
         purchaseReturnTotal += t.totalPrice + returnCommission + returnCommissionTax;
       }
     } else {
-      if (t.sellerMemberId === memberId) salesTotal += t.totalPrice;
-      if (t.buyerMemberId === memberId) purchaseTotal += t.totalPrice;
+      if (matchSeller(t)) salesTotal += t.totalPrice;
+      if (matchBuyer(t)) purchaseTotal += t.totalPrice;
     }
   });
 
@@ -115,10 +133,15 @@ async function calculateMemberSettlement(eventId: number, memberId: number, even
   const isFeeCollected = attendance?.feeCollected ?? false;
 
   // 参加費の精算書への反映ロジック
+  // 伝票分割（A/B/C）時は会員あたり1回のみ計上するため、includeFee=false の場合は0に
   let participationFee = 0;
   let participationFeeStatus: "collected" | "uncollected" | "exempt" | "absent" = "absent";
 
-  if (isPresent && isFeeExempt) {
+  if (!options.includeFee) {
+    // 別の伝票で参加費を計上済み → この伝票では0
+    participationFeeStatus = "absent";
+    participationFee = 0;
+  } else if (isPresent && isFeeExempt) {
     // 免除: 精算書に何も書かない
     participationFeeStatus = "exempt";
     participationFee = 0;
@@ -182,17 +205,17 @@ async function generateSettlementData(eventId: number, excludeSettledInterim: bo
     throw new TRPCError({ code: "BAD_REQUEST", message: "取引データがありません。" });
   }
 
-  // Collect all member IDs involved in transactions
-  const memberIds = new Set<number>();
-  txns.forEach(t => {
-    memberIds.add(t.sellerMemberId);
-    memberIds.add(t.buyerMemberId);
-  });
+  // 取引から (memberId, suffix) ペアをすべて収集（伝票分割対応）
+  const pairKey = (memberId: number, suffix: string | null) => `${memberId}|${suffix ?? ""}`;
+  const memberSuffixPairs = new Map<string, { memberId: number; suffix: string | null }>();
+  for (const t of txns) {
+    const sKey = pairKey(t.sellerMemberId, t.sellerSuffix ?? null);
+    const bKey = pairKey(t.buyerMemberId, t.buyerSuffix ?? null);
+    memberSuffixPairs.set(sKey, { memberId: t.sellerMemberId, suffix: t.sellerSuffix ?? null });
+    memberSuffixPairs.set(bKey, { memberId: t.buyerMemberId, suffix: t.buyerSuffix ?? null });
+  }
 
-  // Get existing settlements and register transactions
   // ロック条件: isSettled=true OR レジ取引記録(署名)が存在
-  //   レジで署名まで完了した会員は、何らかの理由で isSettled が false になっていても
-  //   必ず「精算完了」扱いとして保護する（データ修復も同時に実施）
   const existingSettlements = await db.listSettlements(eventId);
   const regTxnsForEvent = await db.listRegisterTransactions(eventId);
   const lockedBySettlementId = new Set<number>(
@@ -202,17 +225,24 @@ async function generateSettlementData(eventId: number, excludeSettledInterim: bo
   const isLocked = (s: typeof existingSettlements[number]) =>
     s.isSettled || lockedBySettlementId.has(s.id);
 
-  const settledMemberIds = new Set<number>();
+  // ロック済みの (memberId, suffix) ペア
+  const lockedPairKeys = new Set<string>();
   if (excludeSettledInterim) {
     existingSettlements
       .filter(isLocked)
-      .forEach(s => settledMemberIds.add(s.memberId));
+      .forEach(s => lockedPairKeys.add(pairKey(s.memberId, s.suffix ?? null)));
   }
 
-  // Delete non-locked settlements; heal locked-but-not-flagged settlements
+  // 既に参加費を計上済みの会員（ロック済み伝票で計上された会員はそれを尊重）
+  const memberFeeAssigned = new Set<number>();
+  existingSettlements
+    .filter(isLocked)
+    .filter(s => (s.participationFee ?? 0) > 0)
+    .forEach(s => memberFeeAssigned.add(s.memberId));
+
+  // ロック外の精算書を削除し、ロック中で isSettled=0 の不整合は修復
   for (const s of existingSettlements) {
     if (isLocked(s)) {
-      // レジ記録があるのに isSettled=0 の不整合を自動修復
       if (!s.isSettled && lockedBySettlementId.has(s.id)) {
         await db.updateSettlement(s.id, {
           isSettled: true,
@@ -224,18 +254,33 @@ async function generateSettlementData(eventId: number, excludeSettledInterim: bo
     await db.deleteSettlement(s.id);
   }
 
+  // 並び順: memberId 昇順 → 枝番（null < A < B < C）昇順
+  const suffixOrder = (s: string | null) => (s === null ? 0 : (s === "A" ? 1 : s === "B" ? 2 : s === "C" ? 3 : 99));
+  const pairs = Array.from(memberSuffixPairs.values()).sort((a, b) => {
+    if (a.memberId !== b.memberId) return a.memberId - b.memberId;
+    return suffixOrder(a.suffix) - suffixOrder(b.suffix);
+  });
+
   const settlementData: Array<any> = [];
   let generatedCount = 0;
 
-  for (const memberId of Array.from(memberIds)) {
-    // Skip members who already have a settled (and possibly signed) settlement
-    if (settledMemberIds.has(memberId)) continue;
+  for (const { memberId, suffix } of pairs) {
+    if (lockedPairKeys.has(pairKey(memberId, suffix))) continue;
 
-    const data = await calculateMemberSettlement(eventId, memberId, event, txns);
+    // この (memberId, suffix) ペアが、当該会員の中で最初に参加費を負担すべきか
+    const includeFee = !memberFeeAssigned.has(memberId);
+
+    const data = await calculateMemberSettlement(
+      eventId, memberId, event, txns, suffix, { includeFee },
+    );
     if (!data) continue;
+
+    // 参加費を計上した場合、以降の同会員伝票では計上しない
+    if (includeFee) memberFeeAssigned.add(memberId);
 
     settlementData.push({
       ...data,
+      suffix,
       settlementType: "final",
     });
     generatedCount++;
@@ -245,7 +290,7 @@ async function generateSettlementData(eventId: number, excludeSettledInterim: bo
     await db.bulkCreateSettlements(settlementData);
   }
 
-  return { memberCount: generatedCount, transactionCount: txns.length, skippedInterim: settledMemberIds.size };
+  return { memberCount: generatedCount, transactionCount: txns.length, skippedInterim: lockedPairKeys.size };
 }
 
 export const settlementsRouter = router({
@@ -287,6 +332,8 @@ export const settlementsRouter = router({
     .input(z.object({
       eventId: z.number(),
       memberId: z.number(),
+      // 伝票分割（A/B/C）対象の枝番。null は通常伝票
+      suffix: z.enum(["A", "B", "C"]).nullable().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const event = await db.getEventById(input.eventId);
@@ -295,32 +342,47 @@ export const settlementsRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "このイベントは最終締め済みです。" });
       }
 
-      // Check if member already has a settlement for this event
+      const targetSuffix = input.suffix ?? null;
+
+      // 同じ (memberId, suffix) ペアで既存の精算書をチェック
       const existingSettlements = await db.listSettlements(input.eventId);
-      const existing = existingSettlements.find(s => s.memberId === input.memberId);
+      const existing = existingSettlements.find(
+        s => s.memberId === input.memberId && (s.suffix ?? null) === targetSuffix,
+      );
       if (existing && existing.isSettled) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "この会員は既に精算済みです。" });
+        throw new TRPCError({ code: "BAD_REQUEST", message: "この伝票は既に精算済みです。" });
       }
 
-      // Delete existing unsettled settlement for this member if any
+      // Delete existing unsettled settlement for this (member, suffix) if any
       if (existing) {
         await db.deleteSettlement(existing.id);
       }
 
       const txns = await db.listTransactions(input.eventId);
       const memberTxns = txns.filter(t =>
-        t.sellerMemberId === input.memberId || t.buyerMemberId === input.memberId
+        (t.sellerMemberId === input.memberId && (t.sellerSuffix ?? null) === targetSuffix) ||
+        (t.buyerMemberId === input.memberId && (t.buyerSuffix ?? null) === targetSuffix)
       );
 
       if (memberTxns.length === 0) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "この会員の取引データがありません。" });
+        throw new TRPCError({ code: "BAD_REQUEST", message: "この伝票の取引データがありません。" });
       }
 
-      const data = await calculateMemberSettlement(input.eventId, input.memberId, event, txns);
+      // 参加費は、同じ会員の他の精算書（suffix=null/A/B/C のいずれか）で
+      // 既に計上されていなければこの伝票で計上する
+      const otherSettlementsForMember = existingSettlements.filter(
+        s => s.memberId === input.memberId && (s.suffix ?? null) !== targetSuffix,
+      );
+      const feeAlreadyAssigned = otherSettlementsForMember.some(s => (s.participationFee ?? 0) > 0);
+
+      const data = await calculateMemberSettlement(
+        input.eventId, input.memberId, event, txns, targetSuffix, { includeFee: !feeAlreadyAssigned },
+      );
       if (!data) throw new TRPCError({ code: "NOT_FOUND", message: "会員が見つかりません。" });
 
       const insertId = await db.createSettlement({
         ...data,
+        suffix: targetSuffix,
         settlementType: "interim",
       });
 

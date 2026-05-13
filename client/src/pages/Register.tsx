@@ -457,6 +457,9 @@ export default function Register() {
             <div className="text-center space-y-2">
               <p className="text-lg text-muted-foreground">
                 {currentSettlement.member?.memberNumber ?? "-"}
+                {(currentSettlement as any).suffix && (
+                  <span className="ml-1 text-blue-600 font-bold">-{(currentSettlement as any).suffix}</span>
+                )}
               </p>
               <p className="text-2xl font-bold">
                 {currentSettlement.member?.displayName ?? "-"}
@@ -847,6 +850,9 @@ export default function Register() {
                       <div className="text-center min-w-[3rem]">
                         <span className="text-lg font-mono font-bold">
                           {s.member?.memberNumber ?? "-"}
+                          {(s as any).suffix && (
+                            <span className="ml-0.5 text-blue-600">-{(s as any).suffix}</span>
+                          )}
                         </span>
                       </div>
                       <div>
