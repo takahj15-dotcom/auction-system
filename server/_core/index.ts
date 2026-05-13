@@ -9,8 +9,6 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { ENV } from "./env";
-import { securityHeaders, loginRateLimiter, apiRateLimiter } from "./security";
 import { getSettlementPdfDataInternal, getBulkSettlementPdfData } from "../routers/pdf";
 import { generateSettlementPdf, generateBulkSettlementPdf, generateRegisterClosingPdf } from "../pdfGenerator";
 import { generateTransactionsExcel, ExcelTransactionRow } from "../excelGenerator";
@@ -43,27 +41,9 @@ async function startServer() {
 
   const app = express();
   const server = createServer(app);
-
-  // リバースプロキシ配下で本番運用する場合のIP判定（X-Forwarded-For）
-  if (ENV.trustProxy) {
-    app.set("trust proxy", 1);
-  }
-
-  // セキュリティHTTPヘッダ
-  app.use(securityHeaders);
-
-  // 画像/署名のアップロード用に大きめのbody制限を必要とするのは tRPC のみ。
-  // それ以外のリクエストは 1MB に抑えてDoSのリスクを下げる。
-  app.use("/api/trpc", express.json({ limit: "10mb" }));
-  app.use("/api/trpc", express.urlencoded({ limit: "10mb", extended: true }));
-  app.use(express.json({ limit: "1mb" }));
-  app.use(express.urlencoded({ limit: "1mb", extended: true }));
-
-  // ログイン専用の厳しめレートリミッタ（ブルートフォース対策）
-  app.use("/api/trpc/portal.login", loginRateLimiter);
-  // 全 tRPC エンドポイントの緩いレートリミッタ
-  app.use("/api/trpc", apiRateLimiter);
-
+  // Configure body parser with larger size limit for file uploads
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Serve local uploads (signatures, seal images, etc.)
   const uploadDir = getLocalUploadDir();
   fs.mkdirSync(uploadDir, { recursive: true });

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { getDb } from "./db";
 import * as schema from "../drizzle/schema";
 import { eq, sql } from "drizzle-orm";

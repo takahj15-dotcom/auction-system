@@ -2,7 +2,7 @@ import { z } from "zod";
 import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { createAuditLog } from "../db";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 export const membersRouter = router({
   list: protectedProcedure
