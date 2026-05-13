@@ -5,9 +5,13 @@ import * as db from "../db";
 import { createAuditLog } from "../db";
 import { eq } from "drizzle-orm";
 import { members } from "../../drizzle/schema";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { ENV } from "../_core/env";
+
+function clientIp(ctx: any): string | null {
+  return (ctx?.req?.ip as string | undefined) ?? null;
+}
 
 // Member authentication for customer portal
 export const portalRouter = router({
@@ -18,17 +22,31 @@ export const portalRouter = router({
       password: z.string(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const member = await db.getMemberByNumber(input.memberNumber);
-      if (!member) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "会員番号またはパスワードが正しくありません。" });
-      }
-      if (!member.password) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "パスワードが設定されていません。管理者にお問い合わせください。" });
-      }
+      const ip = clientIp(ctx);
+      const failGeneric = () =>
+        new TRPCError({ code: "UNAUTHORIZED", message: "会員番号またはパスワードが正しくありません。" });
 
-      const isValid = await bcrypt.compare(input.password, member.password);
-      if (!isValid) {
-        throw new TRPCError({ code: "UNAUTHORIZED", message: "会員番号またはパスワードが正しくありません。" });
+      const member = await db.getMemberByNumber(input.memberNumber);
+
+      // ユーザ列挙とタイミング攻撃の緩和: 会員不在やパスワード未設定の場合も
+      // ダミーハッシュとの比較を行い、CPUコストを揃える。
+      const DUMMY_HASH = "$2b$10$CwTycUXWue0Thq9StjUM0uJ8mUUYZ.HoEpDdJ8e1xZdQ7mZ.eMVxa";
+      const passwordHash = member?.password ?? DUMMY_HASH;
+      const isValid = await bcrypt.compare(input.password, passwordHash);
+
+      if (!member || !member.password || !isValid) {
+        // 失敗監査ログ（IPと会員番号のみ。パスワードは絶対に残さない）
+        try {
+          await createAuditLog({
+            userId: null as any,
+            action: "portal_login_failed",
+            tableName: "members",
+            recordId: member?.id ?? null,
+            newValue: { memberNumber: input.memberNumber },
+            ipAddress: ip ?? undefined,
+          } as any);
+        } catch { /* 監査ログ失敗はログイン失敗の応答に影響させない */ }
+        throw failGeneric();
       }
 
       // Generate JWT token for member
@@ -37,6 +55,17 @@ export const portalRouter = router({
         ENV.cookieSecret,
         { expiresIn: "7d" }
       );
+
+      try {
+        await createAuditLog({
+          userId: null as any,
+          action: "portal_login_success",
+          tableName: "members",
+          recordId: member.id,
+          newValue: { memberNumber: member.memberNumber },
+          ipAddress: ip ?? undefined,
+        } as any);
+      } catch { /* noop */ }
 
       return {
         token,
@@ -95,7 +124,9 @@ export const portalRouter = router({
     .input(z.object({
       token: z.string(),
       currentPassword: z.string().optional(),
-      newPassword: z.string().min(4),
+      // 新規パスワードは最低8文字。初期値「0000」からの変更を強制するため
+      // 古いパスワードと同じ「0000」も拒否される。
+      newPassword: z.string().min(8, "パスワードは8文字以上で設定してください。").max(128),
     }))
     .mutation(async ({ input }) => {
       const decoded = verifyMemberToken(input.token);
