@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
-import { FileText, Lock, Eye, EyeOff, ArrowLeft, CheckCircle } from "lucide-react";
+import { Lock, Eye, EyeOff, ArrowLeft, CheckCircle } from "lucide-react";
 
 export default function PortalChangePassword() {
   const [, setLocation] = useLocation();
@@ -10,6 +10,7 @@ export default function PortalChangePassword() {
   const member = memberStr ? JSON.parse(memberStr) : null;
   const isForced = member?.requirePasswordChange === true;
 
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -51,7 +52,15 @@ export default function PortalChangePassword() {
       setError("パスワードが一致しません。");
       return;
     }
-    changeMutation.mutate({ token: token ?? "", newPassword });
+    if (!isForced && currentPassword.length === 0) {
+      setError("現在のパスワードを入力してください。");
+      return;
+    }
+    changeMutation.mutate({
+      token: token ?? "",
+      newPassword,
+      ...(!isForced ? { currentPassword } : {}),
+    });
   };
 
   if (!token) return null;
@@ -117,6 +126,22 @@ export default function PortalChangePassword() {
           {error && (
             <div style={{ padding: "10px 14px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, color: "#dc2626", fontSize: 13, marginBottom: 16 }}>
               {error}
+            </div>
+          )}
+
+          {!isForced && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 500, color: "#555", marginBottom: 6 }}>
+                現在のパスワード
+              </label>
+              <input
+                type={showPassword ? "text" : "password"}
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="現在のパスワード"
+                style={{ width: "100%", padding: "10px 14px", border: "1px solid #ddd", borderRadius: 8, fontSize: 15, outline: "none", boxSizing: "border-box" }}
+                required
+              />
             </div>
           )}
 

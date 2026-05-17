@@ -3,8 +3,6 @@ import { TRPCError } from "@trpc/server";
 import { router, publicProcedure, adminProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { createAuditLog } from "../db";
-import { eq } from "drizzle-orm";
-import { members } from "../../drizzle/schema";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { ENV } from "../_core/env";
@@ -20,14 +18,35 @@ export const portalRouter = router({
     .mutation(async ({ input, ctx }) => {
       const member = await db.getMemberByNumber(input.memberNumber);
       if (!member) {
+        await createAuditLog({
+          userId: null,
+          action: "portal_login_failure",
+          tableName: "members",
+          recordId: null,
+          newValue: { memberNumber: input.memberNumber, reason: "unknown_member" },
+        });
         throw new TRPCError({ code: "UNAUTHORIZED", message: "会員番号またはパスワードが正しくありません。" });
       }
       if (!member.password) {
+        await createAuditLog({
+          userId: null,
+          action: "portal_login_failure",
+          tableName: "members",
+          recordId: member.id,
+          newValue: { memberNumber: input.memberNumber, reason: "no_password" },
+        });
         throw new TRPCError({ code: "UNAUTHORIZED", message: "パスワードが設定されていません。管理者にお問い合わせください。" });
       }
 
       const isValid = await bcrypt.compare(input.password, member.password);
       if (!isValid) {
+        await createAuditLog({
+          userId: null,
+          action: "portal_login_failure",
+          tableName: "members",
+          recordId: member.id,
+          newValue: { memberNumber: input.memberNumber, reason: "wrong_password" },
+        });
         throw new TRPCError({ code: "UNAUTHORIZED", message: "会員番号またはパスワードが正しくありません。" });
       }
 
@@ -37,6 +56,14 @@ export const portalRouter = router({
         ENV.cookieSecret,
         { expiresIn: "7d" }
       );
+
+      await createAuditLog({
+        userId: null,
+        action: "portal_login_success",
+        tableName: "members",
+        recordId: member.id,
+        newValue: { memberNumber: member.memberNumber },
+      });
 
       return {
         token,
@@ -102,8 +129,10 @@ export const portalRouter = router({
       const member = await db.getMemberById(decoded.memberId);
       if (!member) throw new TRPCError({ code: "NOT_FOUND" });
 
-      // If not first-time change, verify current password
-      if (!member.requirePasswordChange && input.currentPassword) {
+      if (!member.requirePasswordChange) {
+        if (!input.currentPassword) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "現在のパスワードを入力してください。" });
+        }
         if (!member.password) throw new TRPCError({ code: "BAD_REQUEST" });
         const isValid = await bcrypt.compare(input.currentPassword, member.password);
         if (!isValid) throw new TRPCError({ code: "UNAUTHORIZED", message: "現在のパスワードが正しくありません。" });
@@ -382,8 +411,8 @@ export const portalRouter = router({
   markNotificationRead: publicProcedure
     .input(z.object({ token: z.string(), notificationId: z.number() }))
     .mutation(async ({ input }) => {
-      verifyMemberToken(input.token);
-      await db.markNotificationRead(input.notificationId);
+      const decoded = verifyMemberToken(input.token);
+      await db.markNotificationRead(input.notificationId, decoded.memberId);
       return { success: true };
     }),
 

@@ -167,10 +167,10 @@ export default function PortalLogin() {
             </p>
             <p style={{ marginBottom: 8 }}>
               パスワードを忘れた場合は、<strong>オークション管理者</strong>にご連絡ください。
-              管理者がパスワードを初期値（<strong>0000</strong>）にリセットいたします。
+              管理者が一時的な仮パスワードを発行します。
             </p>
             <p style={{ marginBottom: 8 }}>
-              リセット後、初期パスワード <strong>0000</strong> でログインすると、
+              発行された仮パスワードでログインすると、
               新しいパスワードの設定画面が表示されます。
             </p>
             <div style={{
@@ -184,17 +184,13 @@ export default function PortalLogin() {
                 再設定の手順
               </p>
               <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#475569" }}>
-                <li>管理者にパスワードリセットを依頼</li>
-                <li>初期パスワード「0000」でログイン</li>
+                <li>管理者に仮パスワード発行を依頼</li>
+                <li>発行された仮パスワードでログイン</li>
                 <li>新しいパスワードを設定</li>
               </ol>
             </div>
           </div>
         )}
-
-        <p style={{ textAlign: "center", fontSize: 12, color: "#aaa", marginTop: 16 }}>
-          初期パスワードは「0000」です
-        </p>
       </div>
     </div>
   );

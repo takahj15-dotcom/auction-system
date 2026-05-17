@@ -106,6 +106,7 @@ export default function Members() {
   const [passwordMemberId, setPasswordMemberId] = useState<number | null>(null);
   const [passwordMemberName, setPasswordMemberName] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [issuedTemporaryPassword, setIssuedTemporaryPassword] = useState("");
   const [showVacant, setShowVacant] = useState(false);
   const [showExpiredOnly, setShowExpiredOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -145,14 +146,15 @@ export default function Members() {
     onSuccess: () => {
       setPasswordDialogOpen(false);
       setNewPassword("");
+      setIssuedTemporaryPassword("");
       toast.success("パスワードを設定しました（初回ログイン時に変更が求められます）");
     },
     onError: (e: any) => toast.error(e.message),
   });
   const resetPasswordMutation = trpc.members.resetPassword.useMutation({
-    onSuccess: () => {
-      setPasswordDialogOpen(false);
-      toast.success("パスワードを初期値（0000）にリセットしました");
+    onSuccess: (data) => {
+      setIssuedTemporaryPassword(data.temporaryPassword);
+      toast.success("仮パスワードを発行しました。本人へ安全な経路で伝えてください。");
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -179,6 +181,7 @@ export default function Members() {
     setPasswordMemberId(m.id);
     setPasswordMemberName(`${m.memberNumber} ${m.displayName}`);
     setNewPassword("");
+    setIssuedTemporaryPassword("");
     setPasswordDialogOpen(true);
   };
 
@@ -909,8 +912,17 @@ export default function Members() {
               <strong>{passwordMemberName}</strong> のポータルログインパスワードを設定します。
               初回ログイン時にパスワード変更が求められます。
             </p>
+            {issuedTemporaryPassword && (
+              <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3">
+                <Label>発行済み仮パスワード（一度だけ表示）</Label>
+                <Input type="text" value={issuedTemporaryPassword} readOnly />
+                <p className="text-xs text-amber-800">
+                  この値は保存されません。本人へ安全な経路で伝えてください。
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
-              <Label>初期パスワード</Label>
+              <Label>仮パスワード（手入力）</Label>
               <Input
                 type="text"
                 value={newPassword}
@@ -925,14 +937,14 @@ export default function Members() {
               variant="destructive"
               onClick={() => {
                 if (!passwordMemberId) return;
-                if (confirm("パスワードを初期値（0000）にリセットしますか？")) {
+                if (confirm("ランダムな仮パスワードを発行しますか？")) {
                   resetPasswordMutation.mutate({ id: passwordMemberId });
                 }
               }}
               disabled={resetPasswordMutation.isPending}
               className="sm:mr-auto"
             >
-              {resetPasswordMutation.isPending ? "リセット中..." : "初期値(0000)にリセット"}
+              {resetPasswordMutation.isPending ? "発行中..." : "仮パスワードを発行"}
             </Button>
             <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>
               キャンセル
