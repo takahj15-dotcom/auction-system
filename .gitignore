@@ -122,6 +122,8 @@ uploads/
 
 # Local Claude Code settings
 .claude/settings.local.json
+.claude
+.claude.backup/
 
 # Ad-hoc notes / test outputs
 pdf-test-result.txt

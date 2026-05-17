@@ -18,14 +18,35 @@ export const portalRouter = router({
     .mutation(async ({ input, ctx }) => {
       const member = await db.getMemberByNumber(input.memberNumber);
       if (!member) {
+        await createAuditLog({
+          userId: null,
+          action: "portal_login_failure",
+          tableName: "members",
+          recordId: null,
+          newValue: { memberNumber: input.memberNumber, reason: "unknown_member" },
+        });
         throw new TRPCError({ code: "UNAUTHORIZED", message: "会員番号またはパスワードが正しくありません。" });
       }
       if (!member.password) {
+        await createAuditLog({
+          userId: null,
+          action: "portal_login_failure",
+          tableName: "members",
+          recordId: member.id,
+          newValue: { memberNumber: input.memberNumber, reason: "no_password" },
+        });
         throw new TRPCError({ code: "UNAUTHORIZED", message: "パスワードが設定されていません。管理者にお問い合わせください。" });
       }
 
       const isValid = await bcrypt.compare(input.password, member.password);
       if (!isValid) {
+        await createAuditLog({
+          userId: null,
+          action: "portal_login_failure",
+          tableName: "members",
+          recordId: member.id,
+          newValue: { memberNumber: input.memberNumber, reason: "wrong_password" },
+        });
         throw new TRPCError({ code: "UNAUTHORIZED", message: "会員番号またはパスワードが正しくありません。" });
       }
 
@@ -35,6 +56,14 @@ export const portalRouter = router({
         ENV.cookieSecret,
         { expiresIn: "7d" }
       );
+
+      await createAuditLog({
+        userId: null,
+        action: "portal_login_success",
+        tableName: "members",
+        recordId: member.id,
+        newValue: { memberNumber: member.memberNumber },
+      });
 
       return {
         token,

@@ -146,6 +146,51 @@ describe("portal security blockers", () => {
     expect(mockState.notifications.filter((n: any) => n.memberId === 2 && !n.isRead)).toHaveLength(1);
   });
 
+  it("records portal_login_success in audit_logs on successful login", async () => {
+    const caller = createPortalCaller(portalRouter);
+    await caller.login({ memberNumber: 101, password: "old-password" });
+
+    const successLogs = mockState.auditLogs.filter((l: any) => l.action === "portal_login_success");
+    expect(successLogs).toHaveLength(1);
+    expect(successLogs[0]).toMatchObject({
+      userId: null,
+      action: "portal_login_success",
+      tableName: "members",
+      recordId: 1,
+      newValue: { memberNumber: 101 },
+    });
+  });
+
+  it("records portal_login_failure with reason unknown_member for missing member numbers", async () => {
+    const caller = createPortalCaller(portalRouter);
+    await expect(caller.login({ memberNumber: 9999, password: "anything" })).rejects.toThrow();
+
+    const failureLogs = mockState.auditLogs.filter((l: any) => l.action === "portal_login_failure");
+    expect(failureLogs).toHaveLength(1);
+    expect(failureLogs[0]).toMatchObject({
+      userId: null,
+      action: "portal_login_failure",
+      tableName: "members",
+      recordId: null,
+      newValue: { memberNumber: 9999, reason: "unknown_member" },
+    });
+  });
+
+  it("records portal_login_failure with reason wrong_password for invalid passwords", async () => {
+    const caller = createPortalCaller(portalRouter);
+    await expect(caller.login({ memberNumber: 101, password: "totally-wrong" })).rejects.toThrow();
+
+    const failureLogs = mockState.auditLogs.filter((l: any) => l.action === "portal_login_failure");
+    expect(failureLogs).toHaveLength(1);
+    expect(failureLogs[0]).toMatchObject({
+      userId: null,
+      action: "portal_login_failure",
+      tableName: "members",
+      recordId: 1,
+      newValue: { memberNumber: 101, reason: "wrong_password" },
+    });
+  });
+
   it("issues a random temporary password and does not keep the old password valid", async () => {
     const adminCaller = createAdminCaller(membersRouter);
     const portalCaller = createPortalCaller(portalRouter);
