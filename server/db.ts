@@ -37,8 +37,8 @@ export async function getDb() {
       _sqlite.pragma("foreign_keys = ON");
       _db = drizzle(_sqlite);
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
+      console.error("[Database] Failed to connect:", error);
+      throw error;
     }
   }
   return _db;
@@ -672,12 +672,12 @@ export async function countUnreadNotifications(memberId: number) {
   return result?.count ?? 0;
 }
 
-export async function markNotificationRead(id: number) {
+export async function markNotificationRead(id: number, memberId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(memberNotifications)
     .set({ isRead: true, readAt: new Date() })
-    .where(eq(memberNotifications.id, id));
+    .where(and(eq(memberNotifications.id, id), eq(memberNotifications.memberId, memberId)));
 }
 
 export async function markAllNotificationsRead(memberId: number) {

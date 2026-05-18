@@ -1,10 +1,46 @@
+const isProd = process.env.NODE_ENV === "production";
+
+type ReadOptions = {
+  required?: boolean;
+  minLength?: number;
+};
+
+function readEnv(name: string, options: ReadOptions = {}): string {
+  const value = (process.env[name] ?? "").trim();
+  const required = options.required ?? true;
+  const minLength = options.minLength ?? 0;
+
+  if (!value) {
+    if (isProd && required) {
+      throw new Error(
+        `[ENV] Required environment variable ${name} is not set. Refusing to start in production.`
+      );
+    }
+    if (!isProd && required) {
+      console.warn(
+        `[ENV] ${name} is not set; using empty string fallback (non-production only).`
+      );
+    }
+    return "";
+  }
+
+  if (value.length < minLength) {
+    const message = `[ENV] ${name} is too short (got ${value.length} chars, need ${minLength}).`;
+    if (isProd) throw new Error(message);
+    console.warn(`${message} Continuing with weak value because NODE_ENV is not "production".`);
+  }
+
+  return value;
+}
+
 export const ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: process.env.JWT_SECRET ?? "",
-  databaseUrl: process.env.DATABASE_URL ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
-  isProduction: process.env.NODE_ENV === "production",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  appId: readEnv("VITE_APP_ID"),
+  cookieSecret: readEnv("JWT_SECRET", { minLength: 32 }),
+  databaseUrl: readEnv("DATABASE_URL", { required: false }),
+  uploadDir: readEnv("UPLOAD_DIR", { required: false }),
+  oAuthServerUrl: readEnv("OAUTH_SERVER_URL"),
+  ownerOpenId: readEnv("OWNER_OPEN_ID", { required: false }),
+  isProduction: isProd,
+  forgeApiUrl: readEnv("BUILT_IN_FORGE_API_URL", { required: false }),
+  forgeApiKey: readEnv("BUILT_IN_FORGE_API_KEY", { required: false }),
 };

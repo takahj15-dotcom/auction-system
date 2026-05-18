@@ -3,6 +3,13 @@ import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
 import * as db from "../db";
 import { createAuditLog } from "../db";
 import bcrypt from "bcryptjs";
+import { randomInt } from "node:crypto";
+
+const TEMP_PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+function generateTemporaryPassword(length = 12): string {
+  return Array.from({ length }, () => TEMP_PASSWORD_CHARS[randomInt(TEMP_PASSWORD_CHARS.length)]).join("");
+}
 
 export const membersRouter = router({
   list: protectedProcedure
@@ -141,13 +148,14 @@ export const membersRouter = router({
       return { success: true };
     }),
 
-  // Reset password to default "0000"
+  // Issue a one-time temporary password. The plain value is returned once and never logged.
   resetPassword: adminProcedure
     .input(z.object({
       id: z.number(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const hashedPassword = await bcrypt.hash("0000", 10);
+      const temporaryPassword = generateTemporaryPassword();
+      const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
       await db.updateMember(input.id, {
         password: hashedPassword,
         requirePasswordChange: true,
@@ -157,31 +165,8 @@ export const membersRouter = router({
         action: "reset_password",
         tableName: "members",
         recordId: input.id,
-        newValue: { passwordReset: true, defaultPassword: "0000" },
+        newValue: { temporaryPasswordIssued: true },
       });
-      return { success: true };
-    }),
-
-  // Bulk reset all passwords to default "0000"
-  resetAllPasswords: adminProcedure
-    .mutation(async ({ ctx }) => {
-      const allMembers = await db.listMembers();
-      const hashedPassword = await bcrypt.hash("0000", 10);
-      let count = 0;
-      for (const member of allMembers) {
-        await db.updateMember(member.id, {
-          password: hashedPassword,
-          requirePasswordChange: true,
-        });
-        count++;
-      }
-      await createAuditLog({
-        userId: ctx.user.id,
-        action: "reset_all_passwords",
-        tableName: "members",
-        recordId: 0,
-        newValue: { count, defaultPassword: "0000" },
-      });
-      return { success: true, count };
+      return { success: true, temporaryPassword };
     }),
 });

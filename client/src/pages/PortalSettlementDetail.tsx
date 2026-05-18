@@ -39,16 +39,17 @@ export default function PortalSettlementDetail() {
   }, []);
 
   const handleDownloadPdf = useCallback(async () => {
-    if (!params.id) return;
+    if (!params.id || !token) return;
+    const tokenParam = encodeURIComponent(token);
     setPdfLoading(true);
     try {
       if (isMobile()) {
         // Mobile: Open PDF directly in browser tab using inline mode
         // This is the most reliable method for iOS Safari and Android Chrome
-        window.open(`/api/pdf/settlement/${params.id}?inline=1`, "_blank");
+        window.open(`/api/pdf/settlement/${params.id}?inline=1&token=${tokenParam}`, "_blank");
       } else {
         // Desktop: Use fetch + blob for proper download with filename
-        const response = await fetch(`/api/pdf/settlement/${params.id}`);
+        const response = await fetch(`/api/pdf/settlement/${params.id}?token=${tokenParam}`);
         if (!response.ok) throw new Error("PDF generation failed");
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -66,7 +67,7 @@ export default function PortalSettlementDetail() {
     } catch (err) {
       // Fallback: try window.open as last resort
       try {
-        window.open(`/api/pdf/settlement/${params.id}?inline=1`, "_blank");
+        window.open(`/api/pdf/settlement/${params.id}?inline=1&token=${tokenParam}`, "_blank");
       } catch {
         alert("PDFの生成に失敗しました。しばらくしてからもう一度お試しください。");
       }
@@ -74,7 +75,7 @@ export default function PortalSettlementDetail() {
       // Delay clearing loading state on mobile to give time for new tab to open
       setTimeout(() => setPdfLoading(false), isMobile() ? 2000 : 500);
     }
-  }, [params.id, data]);
+  }, [params.id, data, token]);
 
   if (!token) return null;
 

@@ -1,0 +1,45 @@
+[Unit]
+Description=Auction System (Gifu Recycle Auction Ledger)
+Documentation=file:///opt/auction-system/docs/deploy.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=auction
+Group=auction
+WorkingDirectory=/opt/auction-system
+
+# 環境変数は別ファイル管理 (docs/deploy.md §2 参照)
+EnvironmentFile=/etc/auction-system/.env
+
+ExecStart=/usr/bin/node /opt/auction-system/dist/index.js
+
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=15
+
+# stdout / stderr は journald に流す (journalctl -u auction-system で閲覧)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=auction-system
+
+# セキュリティハードニング
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/auction-system
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=false
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
